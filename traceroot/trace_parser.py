@@ -267,12 +267,69 @@ def _enclosing_function(tree: ast.Module, line: int):
     return best
 
 
+def _assigned_names(stmt: ast.stmt) -> set[str]:
+    targets = []
+    if isinstance(stmt, ast.Assign):
+        targets = stmt.targets
+    elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+        targets = [stmt.target]
+    elif isinstance(stmt, (ast.For, ast.AsyncFor)):
+        targets = [stmt.target]
+    elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+        targets = [i.optional_vars for i in stmt.items if i.optional_vars]
+    return {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+
+
+def _value_part(stmt: ast.stmt) -> list[ast.AST]:
+    """The right-hand side of an assignment-like statement (what the assigned names come from)."""
+    if isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        return [stmt.value] if stmt.value else []
+    if isinstance(stmt, (ast.For, ast.AsyncFor)):
+        return [stmt.iter]
+    if isinstance(stmt, (ast.With, ast.AsyncWith)):
+        return [i.context_expr for i in stmt.items]
+    return []
+
+
+def _frame_nodes(func, line: int, is_crash: bool) -> list[ast.AST]:
+    """Code whose names we follow. Short crash function: all of it. Otherwise: the statement (or call) on
+    the frame line plus the earlier local assignments that feed it (two rounds of def-use)."""
+    if is_crash and (func.end_lineno or func.lineno) - func.lineno <= config.WHOLE_FUNC_LINES:
+        return [func]
+    stmts = [n for n in ast.walk(func) if isinstance(n, ast.stmt) and n is not func
+             and n.lineno <= line <= (n.end_lineno or n.lineno)]
+    if not stmts:
+        return [func]
+    here = min(stmts, key=lambda n: (n.end_lineno or n.lineno) - n.lineno)
+    if (here.end_lineno or here.lineno) > here.lineno:   # multi-line statement: narrow to the call on the line
+        calls = [n for n in ast.walk(here) if isinstance(n, ast.Call)
+                 and n.lineno <= line <= (n.end_lineno or n.lineno)]
+        if calls:
+            here = min(calls, key=lambda n: ((n.end_lineno or n.lineno) - n.lineno, -n.lineno))
+    nodes = [here]
+    needed = {n.id for n in ast.walk(here) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    earlier = [n for n in ast.walk(func) if isinstance(n, ast.stmt) and n.lineno < here.lineno]
+    for _ in range(2):
+        found = set()
+        for st in earlier:
+            if _assigned_names(st) & needed:
+                parts = _value_part(st)
+                nodes += parts
+                found |= {n.id for p in parts for n in ast.walk(p)
+                          if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+        needed = found - needed
+        if not needed:
+            break
+    return nodes
+
+
 def related_definitions(kept: list, slices: list[CodeSlice], root: Path,
                         max_def_lines: int = config.MAX_DEF_LINES,
                         max_total: int = config.MAX_RELATED_LINES) -> list[CodeSlice]:
     """Definitions (one hop) of project names used by the traceback functions, crash site first."""
     covered = [(s.file, s.start, s.end) for s in slices]
     out, seen, total = [], set(), 0
+    crash_frame = kept[-1][0] if kept else None
     for fr, p in reversed(kept):                     # crash frame first: its names matter most
         parsed = _parse_file(p)
         if not parsed:
@@ -284,7 +341,8 @@ def related_definitions(kept: list, slices: list[CodeSlice], root: Path,
         local_defs = _top_level_defs(tree)
         imp_names, imp_modules = _imports(tree, p, root)
         wanted = []                                  # (file, name) in order of first use
-        for node in ast.walk(func):
+        scope = _frame_nodes(func, fr.line, fr is crash_frame)
+        for node in (n for part in scope for n in ast.walk(part)):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 if node.id in local_defs and node.id != func.name:
                     wanted.append((p, node.id))

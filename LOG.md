@@ -760,3 +760,51 @@ the model, at ~1.2–1.5k tokens of code.
 Claude's own rank. On shop both orderings got 5/7 top-1.
 
 **Next:** projects 2–4 with larger files, to see whether slicing pays off at more realistic sizes.
+
+---
+
+## 2026-10-25 20:14: Result: project 2 ("logs", 357 lines) and a token problem in the definition lookup
+**Type:** Result
+
+**What:**
+- Added `bench/projects/logs/`, an access-log analyzer: regex parser, filters, stats (percentiles,
+  top-N, histogram), report formatting, and a settings module, with 9 mutations.
+- First run: TraceRoot got 7/9 top-1, the baseline 8/9. The Jev gate answered 3/9 at ~2.2–3.3k tokens
+  vs. ~9k for the baseline.
+- But full-path cases reached up to **15k tokens**. The lookup followed *every* name used by outer
+  frames like `build_report()`, which calls a dozen report functions. That added 11–15 definitions
+  (~2k tokens), and Jev's two calls each carried them too.
+
+---
+
+## 2026-10-25 20:19: Changed: precise definition lookup for outer frames
+**Type:** Changed
+
+**What:**
+- The crash function is followed in full only if it's short (≤ `WHOLE_FUNC_LINES` = 12).
+- Otherwise, and for every outer frame, TraceRoot follows only:
+  - the statement on the frame line, narrowed to the innermost call when the statement spans several lines
+  - plus the earlier local assignments that feed the names on it (two rounds of def-use, e.g.
+    `cart = build_cart(order, catalog)` ← `catalog = load_catalog(...)`)
+
+**Why:** this keeps exactly the definitions that fixed shop's misses and drops unrelated ones. A free
+check on all 18 cases showed the same bug-line coverage, with average code sent dropping from
+~1,200 to **859 tokens**. logs-07 went from 17 definitions to 4.
+
+---
+
+## 2026-10-25 20:20: Result: benchmark v3 on shop + logs (18 cases)
+**Type:** Result
+
+| | Top-1 | Gate-path tokens | Full-path tokens |
+|---|---|---|---|
+| TraceRoot v3 | **15/18** | ~1.7–2.5k (5 cases, all correct) | ~8.6–12.5k |
+| Baseline (all files) | **17/18** | – | 5.0–10.0k (grows with project size) |
+
+- Shop is now 8/9: shop-03 is fixed (the dict entry is in context), and shop-04 is at rank 5.
+- Logs is 7/9. logs-01 is still missed: the `Record` is built in `parse_line`, which isn't on the stack
+  or referenced by the crash frames' names (a two-hop case). logs-02 is at rank 2.
+- On 170–360-line projects, the full path still costs about as much as sending every file, because
+  ~4k of it is Jev.
+- **Next:** projects 3–4 with larger code (~700 lines), where the baseline's cost should grow and
+  TraceRoot's should stay about flat.

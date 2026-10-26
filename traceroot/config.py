@@ -27,6 +27,7 @@ MAX_FRAMES = 3          # frames closest to the crash that we keep
 CONTEXT_LINES = 20      # lines read above and below each frame's line
 MAX_DEF_LINES = 40      # one-hop definitions: max lines per definition
 MAX_RELATED_LINES = 160 # one-hop definitions: max lines in total
+WHOLE_FUNC_LINES = 12   # crash function this short: follow every name in it
 RUN_TIMEOUT_S = 60      # timeout for `analyze --run`
 
 # Files we never read, even inside the project root
