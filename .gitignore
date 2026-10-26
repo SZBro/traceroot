@@ -6,3 +6,5 @@ __pycache__/
 
 # benchmark run output (regenerate with bench/run_bench.py)
 bench/out/
+build/
+dist/

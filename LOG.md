@@ -1200,7 +1200,7 @@ agent context. The held-out set is also a tie on top-1 (6/9 each), and TraceRoot
 
 ---
 
-## 2026-10-25 22:02: Added: agent setup (`install-skill`, `check`, user config) and a real agent trial
+## 2026-10-25 21:59: Added: agent setup (`install-skill`, `check`, user config) and a real agent trial
 **Type:** Added, Result, Decision
 
 **Why:** the user pointed out that the README didn't explain how an *agent* uses TraceRoot on its own
