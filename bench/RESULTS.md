@@ -6,45 +6,49 @@
 
 | Method | Top-1 | Top-3 | Found at all | Avg model tokens / case | Avg latency |
 |---|---|---|---|---|---|
-| TraceRoot | 4/9 (44%) | 4/9 (44%) | 4/9 (44%) | 7,480 | 9.9 s |
-| Baseline: Claude + full files | 9/9 (100%) | 9/9 (100%) | 9/9 (100%) | 5,952 | 9.1 s |
+| TraceRoot | 7/9 (78%) | 7/9 (78%) | 7/9 (78%) | 8,000 | 8.5 s |
+| Baseline: Claude + full files | 8/9 (89%) | 8/9 (89%) | 8/9 (89%) | 5,845 | 8.8 s |
 
-TraceRoot used **-26% fewer model tokens** per case than the full-file baseline.
+TraceRoot used **37% more model tokens** per case than the full-file baseline.
+
+## Does Jev's re-ranking help? (full-path cases only)
+
+Same TraceRoot candidates, two orderings: **Jev score** (what TraceRoot ships) top-1 5/7 (71%) vs. **Claude's own rank** top-1 5/7 (71%).
 
 ## Tokens the calling agent reads
 
 | | Avg tokens / case |
 |---|---|
-| Traceback + full files in the traceback | 861 |
+| Traceback + full files in the traceback | 1,112 |
 | Traceback + every project source file | 1,374 |
 | TraceRoot compact output (top cause) | 55 |
 
-Average reduction: **93%** vs. reading the traceback's files, **96%** vs. reading the whole project. (Text tokens are len//4 estimates.)
+Average reduction: **95%** vs. reading the traceback's files, **96%** vs. reading the whole project. (Text tokens are len//4 estimates.)
 
 ## Jev gate
 
 - Answered alone (no Claude call): 2/9 (22%)
 - Gate precision (gate answers that were right): 2/2 (100%)
-- Avg model tokens: gate path 1,948, full path 9,061
+- Avg model tokens: gate path 2,150, full path 9,671
 
 ## By distance between bug and crash
 
 | Distance | Cases | TraceRoot top-1 | Baseline top-1 |
 |---|---|---|---|
 | crash_line | 3 | 3/3 (100%) | 3/3 (100%) |
-| same_file | 2 | 1/2 (50%) | 2/2 (100%) |
-| cross_file | 4 | 0/4 (0%) | 4/4 (100%) |
+| same_file | 2 | 1/2 (50%) | 1/2 (50%) |
+| cross_file | 4 | 3/4 (75%) | 4/4 (100%) |
 
 ## Every case
 
 | Case | Kind | Distance | Bug at | Crash at | TraceRoot path | TraceRoot hit rank | Baseline hit rank | TraceRoot tokens | Baseline tokens |
 |---|---|---|---|---|---|---|---|---|---|
-| shop-01 | wrong_type | cross_file | `shop/catalog.py:22` | `shop/pricing.py:37` | full | miss | 1 | 8,310 | 6,492 |
-| shop-02 | wrong_type | cross_file | `shop/catalog.py:23` | `shop/cart.py:34` | full | miss | 1 | 12,583 | 6,161 |
-| shop-03 | key_error | same_file | `shop/cart.py:7` | `shop/cart.py:51` | full | miss | 1 | 8,679 | 6,580 |
-| shop-04 | none_value | cross_file | `shop/catalog.py:31` | `shop/cart.py:34` | full | miss | 1 | 8,464 | 6,237 |
-| shop-05 | key_error | crash_line | `shop/pricing.py:17` | `shop/pricing.py:17` | full | 1 | 1 | 8,551 | 6,727 |
-| shop-06 | missing_import | same_file | `main.py:1` | `main.py:31` | jev_gate | 1 | 1 | 1,442 | 5,001 |
-| shop-07 | typo | crash_line | `shop/pricing.py:32` | `shop/pricing.py:32` | jev_gate | 1 | 1 | 2,454 | 5,460 |
-| shop-08 | wrong_arguments | crash_line | `shop/cart.py:54` | `shop/cart.py:54` | full | 1 | 1 | 8,217 | 5,500 |
-| shop-09 | none_value | cross_file | `shop/catalog.py:26` | `shop/cart.py:34` | full | miss | 1 | 8,623 | 5,414 |
+| shop-01 | wrong_type | cross_file | `shop/catalog.py:22` | `shop/pricing.py:37` | full | 1 | 1 | 9,745 | 6,146 |
+| shop-02 | wrong_type | cross_file | `shop/catalog.py:23` | `shop/cart.py:34` | full | 1 | 1 | 9,472 | 6,154 |
+| shop-03 | key_error | same_file | `shop/cart.py:7` | `shop/cart.py:51` | full | miss | miss | 9,645 | 5,694 |
+| shop-04 | none_value | cross_file | `shop/catalog.py:31` | `shop/cart.py:34` | full | miss | 1 | 10,379 | 5,423 |
+| shop-05 | key_error | crash_line | `shop/pricing.py:17` | `shop/pricing.py:17` | full | 1 | 1 | 8,610 | 6,377 |
+| shop-06 | missing_import | same_file | `main.py:1` | `main.py:31` | jev_gate | 1 | 1 | 1,757 | 5,029 |
+| shop-07 | typo | crash_line | `shop/pricing.py:32` | `shop/pricing.py:32` | jev_gate | 1 | 1 | 2,544 | 5,729 |
+| shop-08 | wrong_arguments | crash_line | `shop/cart.py:54` | `shop/cart.py:54` | full | 1 | 1 | 9,380 | 6,018 |
+| shop-09 | none_value | cross_file | `shop/catalog.py:26` | `shop/cart.py:34` | full | 1 | 1 | 10,468 | 6,034 |

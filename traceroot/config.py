@@ -25,6 +25,8 @@ STATE_DIR = PROJECT_ROOT / ".traceroot"
 # Parsing
 MAX_FRAMES = 3          # frames closest to the crash that we keep
 CONTEXT_LINES = 20      # lines read above and below each frame's line
+MAX_DEF_LINES = 40      # one-hop definitions: max lines per definition
+MAX_RELATED_LINES = 160 # one-hop definitions: max lines in total
 RUN_TIMEOUT_S = 60      # timeout for `analyze --run`
 
 # Files we never read, even inside the project root

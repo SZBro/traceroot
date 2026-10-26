@@ -714,3 +714,49 @@ author bias. Plan: one project at a time, then a full run.
 
 **Takeaway:** the 8/8 on our own test scripts was misleading. The original test scripts were single
 files, where the cause was always inside the window.
+
+---
+
+## 2026-10-25 20:06: Added: one-hop definition lookup in `trace_parser`
+**Type:** Added, Fixed
+
+**What:** `related_definitions()` (plain code, using Python's `ast`) looks at each traceback function,
+finds the project names it uses, and adds **just their definitions** to the context:
+- functions or classes imported from other project files (`from .catalog import load_catalog`,
+  `from . import pricing` → `pricing.shipping_cost`)
+- module-level constants and functions in the same file (e.g. `DISCOUNTS`)
+- for classes, only the header and fields, not every method
+
+Definitions already inside a ±20 window are skipped. Caps: 40 lines per definition, 160 in total
+(`MAX_DEF_LINES`, `MAX_RELATED_LINES`). Each slice is labeled, e.g. "definition of load_catalog, used
+in main()". The standard library and site-packages are never followed. One new unit test (34 total).
+
+**Why:** benchmark v1 showed 5/9 misses because the bug was in code that had already returned
+(not on the stack) or outside the window. A free pre-check showed all 5 bug lines now reach
+the model, at ~1.2–1.5k tokens of code.
+
+---
+
+## 2026-10-25 20:09: Result: benchmark v2 on "shop" (with one-hop definitions)
+**Type:** Result
+
+| | Top-1 | Avg model tokens / case |
+|---|---|---|
+| TraceRoot v1 | 4/9 | ~7,500 |
+| **TraceRoot v2** | **7/9** | ~8,000 |
+| Baseline (Claude + all files) | 8/9 (9/9 in v1; the model varies) | ~5,850 |
+
+- **Fixed:** shop-01, 02, and 09, where the bug was in `catalog.py`, which had already returned.
+- **Still missed:**
+  - **shop-03:** TraceRoot (and the baseline this time) named the right cause ("SAVE10 vs SAVE_10")
+    but cited the lookup line (51), not the dict entry (7). Strict scoring counts that as a miss.
+  - **shop-04:** Claude's own #1 was the better cause, but **Jev's re-ranking put a worse one first**.
+- **Tokens:** on a 170-line project TraceRoot costs **~37% more** model tokens than sending
+  everything. Jev is now ~4.6k per full-path case, about as much as Claude (~5.0k), because both its
+  calls carry the code.
+- **Agent side:** the calling agent reads **55 tokens instead of ~1,100** (95% less).
+
+**Added to the benchmark:** a free comparison of TraceRoot's candidates ordered by Jev vs. by
+Claude's own rank. On shop both orderings got 5/7 top-1.
+
+**Next:** projects 2–4 with larger files, to see whether slicing pays off at more realistic sizes.

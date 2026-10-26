@@ -1,4 +1,5 @@
 """Parse Python tracebacks into frames and read safe code slices around them. Plain code, no AI."""
+import ast
 import re
 import subprocess
 import sys
@@ -30,6 +31,7 @@ class CodeSlice:
     error_line: int              # the frame line closest to the crash in this slice
     text: str                    # numbered lines, every frame line marked with ">>"
     marks: list[int] = field(default_factory=list)
+    label: str = ""              # e.g. "definition of load_catalog, used in main()"
 
 
 @dataclass
@@ -182,7 +184,145 @@ def attach_context(parsed: ParsedTrace, root: Path | None = None,
     for fr, p in kept:
         by_file.setdefault(p, []).append(fr.line)
     parsed.slices = [s for p, lines in by_file.items() for s in read_slices(p, lines, root=root)]
+    parsed.slices += related_definitions(kept, parsed.slices, root)
     return parsed
+
+
+# ---------- one-hop definitions ----------
+# The root cause is often in code that already returned (so it is not on the stack): a function imported
+# from another project file, or a module-level constant far from the crash. For each traceback function,
+# find the project names it uses and add just their definitions.
+
+def _module_file(module: str | None, level: int, here: Path, root: Path) -> Path | None:
+    """Resolve an import (`from <level dots><module> import ...`) to a project .py file, or None."""
+    if level:
+        base = here.parent
+        for _ in range(level - 1):
+            base = base.parent
+    else:
+        base = root
+    parts = module.split(".") if module else []
+    target = base.joinpath(*parts) if parts else base
+    for cand in (target.with_suffix(".py"), target / "__init__.py"):
+        p = resolve_in_project(str(cand), root)
+        if p:
+            return p
+    return None
+
+
+def _top_level_defs(tree: ast.Module) -> dict[str, ast.stmt]:
+    defs = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defs[node.name] = node
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for t in targets:
+                if isinstance(t, ast.Name):
+                    defs[t.id] = node
+    return defs
+
+
+def _imports(tree: ast.Module, here: Path, root: Path) -> tuple[dict, dict]:
+    """-> (names: local name -> (file, original name), modules: local alias -> file), project-only."""
+    names, modules = {}, {}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            src = _module_file(node.module, node.level, here, root)
+            for a in node.names:
+                local = a.asname or a.name
+                sub = _module_file(f"{node.module}.{a.name}" if node.module else a.name, node.level, here, root)
+                if sub:                                   # `from . import pricing` -> a module
+                    modules[local] = sub
+                elif src:
+                    names[local] = (src, a.name)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                src = _module_file(a.name, 0, here, root)
+                if src:
+                    modules[a.asname or a.name.split(".")[0]] = src
+    return names, modules
+
+
+_TREES: dict[Path, tuple[ast.Module, list[str]] | None] = {}
+
+
+def _parse_file(p: Path):
+    if p not in _TREES:
+        try:
+            src = p.read_text(encoding="utf-8", errors="replace")
+            _TREES[p] = (ast.parse(src), src.splitlines())
+        except (OSError, SyntaxError, ValueError):
+            _TREES[p] = None
+    return _TREES[p]
+
+
+def _enclosing_function(tree: ast.Module, line: int):
+    best = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and \
+                node.lineno <= line <= (node.end_lineno or node.lineno):
+            if best is None or node.lineno >= best.lineno:
+                best = node
+    return best
+
+
+def related_definitions(kept: list, slices: list[CodeSlice], root: Path,
+                        max_def_lines: int = config.MAX_DEF_LINES,
+                        max_total: int = config.MAX_RELATED_LINES) -> list[CodeSlice]:
+    """Definitions (one hop) of project names used by the traceback functions, crash site first."""
+    covered = [(s.file, s.start, s.end) for s in slices]
+    out, seen, total = [], set(), 0
+    for fr, p in reversed(kept):                     # crash frame first: its names matter most
+        parsed = _parse_file(p)
+        if not parsed:
+            continue
+        tree, _ = parsed
+        func = _enclosing_function(tree, fr.line)
+        if func is None:
+            continue
+        local_defs = _top_level_defs(tree)
+        imp_names, imp_modules = _imports(tree, p, root)
+        wanted = []                                  # (file, name) in order of first use
+        for node in ast.walk(func):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                if node.id in local_defs and node.id != func.name:
+                    wanted.append((p, node.id))
+                elif node.id in imp_names:
+                    wanted.append(imp_names[node.id])
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
+                    and node.value.id in imp_modules:
+                wanted.append((imp_modules[node.value.id], node.attr))
+        for file, name in sorted(set(wanted), key=wanted.index):
+            if (file, name) in seen:
+                continue
+            seen.add((file, name))
+            target = _parse_file(file)
+            node = target and _top_level_defs(target[0]).get(name)
+            if not node:
+                continue
+            start = min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
+            end = node.end_lineno or node.lineno
+            if isinstance(node, ast.ClassDef):           # header + fields only, not every method
+                methods = [b.lineno for b in node.body if isinstance(b, (ast.FunctionDef, ast.AsyncFunctionDef))]
+                if methods:
+                    end = max(node.lineno, min(methods) - 1)
+            rel = file.relative_to(root).as_posix()
+            if any(f == rel and s <= start and end <= e for f, s, e in covered):
+                continue                             # already inside a frame window
+            end = min(end, start + max_def_lines - 1)
+            if total + (end - start + 1) > max_total:
+                continue
+            total += end - start + 1
+            covered.append((rel, start, end))
+            lines = target[1]
+            width = len(str(end))
+            text = "\n".join(f"   {n:>{width}} | {lines[n - 1]}" for n in range(start, end + 1))
+            truncated = end < (node.end_lineno or end) and not isinstance(node, ast.ClassDef)
+            out.append(CodeSlice(file=rel, start=start, end=end, error_line=0,
+                                 text=text + ("\n   ... (truncated)" if truncated else ""),
+                                 label=f"definition of {name}, used in {func.name}()"))
+    return out
 
 
 def slice_for_file(path: str, root: Path | None = None) -> CodeSlice | None:

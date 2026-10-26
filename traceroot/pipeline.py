@@ -40,7 +40,8 @@ def traceback_text(parsed: ParsedTrace) -> str:
 
 
 def slices_text(parsed: ParsedTrace) -> str:
-    parts = [f"--- {s.file} (lines {s.start}-{s.end}) ---\n{s.text}" for s in parsed.slices]
+    parts = [f"--- {s.file} (lines {s.start}-{s.end}{'; ' + s.label if s.label else ''}) ---\n{s.text}"
+             for s in parsed.slices]
     text = "\n\n".join(parts) or "(no project source available)"
     return text if len(text) <= MAX_SLICE_CHARS else text[:MAX_SLICE_CHARS] + "\n...(trimmed)"
 

@@ -96,6 +96,49 @@ class SliceMergeTests(unittest.TestCase):
             self.assertEqual([(s.start, s.end, s.marks) for s in slices], [(5, 23, [10, 18])])
 
 
+class RelatedDefinitionTests(unittest.TestCase):
+    """One-hop definitions: imported project functions, module constants, module-alias attributes."""
+
+    FILES = {
+        "app/__init__.py": "",
+        "app/loader.py": "def load(path):\n    rows = []\n    rows.append(None)\n    return rows\n",
+        "app/util.py": "def helper(x):\n    return x\n",
+        "app/core.py": (
+            "from . import util\n"
+            "from .loader import load\n"
+            "import json\n"
+            "\n"
+            "LIMITS = {'a': 1}\n"
+            "class Box:\n    size: int = 0\n\n    def grow(self):\n        return self.size + 1\n"
+            + "\n" * 40 +
+            "def run():\n"
+            "    rows = load('x')\n"
+            "    util.helper(rows)\n"
+            "    b = Box()\n"
+            "    return LIMITS['b'] + len(json.dumps(rows))\n"
+        ),
+        "main.py": "from app.core import run\n\nrun()\n",
+    }
+
+    def test_follows_imports_constants_and_aliases(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            for rel, text in self.FILES.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text)
+            crash = self.FILES["app/core.py"].splitlines().index("    return LIMITS['b'] + len(json.dumps(rows))") + 1
+            trace = (f'Traceback (most recent call last):\n  File "{root / "main.py"}", line 3, in <module>\n'
+                     f'  File "{root / "app" / "core.py"}", line {crash}, in run\nKeyError: \'b\'\n')
+            p = tp.parse(trace, root)
+            labels = {s.label.split(",")[0]: (s.file, s.start, s.end) for s in p.slices if s.label}
+        self.assertEqual(labels["definition of load"], ("app/loader.py", 1, 4))      # other file
+        self.assertEqual(labels["definition of helper"], ("app/util.py", 1, 2))      # module alias attr
+        self.assertEqual(labels["definition of LIMITS"], ("app/core.py", 5, 5))      # far constant
+        self.assertEqual(labels["definition of Box"], ("app/core.py", 6, 8))         # fields, not methods
+        self.assertNotIn("definition of json", labels)                               # stdlib skipped
+        self.assertNotIn("definition of run", labels)                                # not itself
+
+
 class SafetyTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

@@ -129,6 +129,7 @@ def run_case(project: str, spec: dict, mut: dict, baseline: bool) -> dict:
     agent_project = est(case.stderr) + sum(est(p.read_text(encoding="utf-8")) for p in project_sources(case))
 
     row = {"id": case.id, "project": project, "kind": case.kind, "distance": case.distance,
+           "crash_ok": case.crash_ok,
            "truth": f"{case.truth_file}:{case.truth_line}", "crash": f"{case.crash_file}:{case.crash_line}",
            "error_line": parsed.error_line,
            "agent_tokens_referenced": agent_referenced, "agent_tokens_project": agent_project,
@@ -163,8 +164,25 @@ def method_stats(rows: list[dict], key: str) -> dict:
             "tokens": avg(r["model_tokens"] for r in rs), "ms": avg(r["latency_ms"] for r in rs)}
 
 
+def claude_order_rank(row: dict) -> int | None:
+    """Ablation: TraceRoot's own candidates, but ordered by Claude's rank instead of Jev's score."""
+    t = row["traceroot"]
+    causes = sorted(t["causes"], key=lambda c: (c.get("claude_rank") is None, c.get("claude_rank") or 0))
+    truth_file, truth_line = row["truth"].rsplit(":", 1)
+    crash_file, crash_line = row["crash"].rsplit(":", 1)
+    ok = [(truth_file, int(truth_line))] + ([(crash_file, int(crash_line))] if row.get("crash_ok") else [])
+    for i, c in enumerate(causes, 1):
+        if c.get("file") and c.get("line") and any(
+                c["file"] == f and abs(int(c["line"]) - ln) <= LINE_TOLERANCE for f, ln in ok):
+            return i
+    return None
+
+
 def summarize(rows: list[dict]) -> str:
     tr, bl = method_stats(rows, "traceroot"), method_stats(rows, "baseline")
+    full_rows = [r for r in rows if r["traceroot"]["source"] == "full"]
+    jev_order_top1 = sum(r["traceroot"]["top1"] for r in full_rows)
+    claude_order_top1 = sum(claude_order_rank(r) == 1 for r in full_rows)
     gate = [r for r in rows if r["traceroot"]["source"] == "jev_gate"]
     full = [r for r in rows if r["traceroot"]["source"] == "full"]
     out = ["# TraceRoot benchmark results", "",
@@ -179,8 +197,14 @@ def summarize(rows: list[dict]) -> str:
             out.append(f"| {name} | {pct(s['top1'], s['n'])} | {pct(s['top3'], s['n'])} | {pct(s['any'], s['n'])} "
                        f"| {s['tokens']:,.0f} | {s['ms'] / 1000:.1f} s |")
     if tr["n"] and bl["n"] and bl["tokens"]:
-        out += ["", f"TraceRoot used **{100 * (1 - tr['tokens'] / bl['tokens']):.0f}% fewer model tokens** "
-                    f"per case than the full-file baseline."]
+        diff = 100 * (1 - tr["tokens"] / bl["tokens"])
+        word = "fewer" if diff >= 0 else "more"
+        out += ["", f"TraceRoot used **{abs(diff):.0f}% {word} model tokens** per case than the full-file baseline."]
+
+    out += ["", "## Does Jev's re-ranking help? (full-path cases only)", "",
+            f"Same TraceRoot candidates, two orderings: **Jev score** (what TraceRoot ships) top-1 "
+            f"{pct(jev_order_top1, len(full_rows))} vs. **Claude's own rank** top-1 "
+            f"{pct(claude_order_top1, len(full_rows))}."]
 
     out += ["", "## Tokens the calling agent reads", "",
             "| | Avg tokens / case |", "|---|---|",
