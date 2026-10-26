@@ -528,7 +528,7 @@ jev_gate       4               0         1020      550
 
 ---
 
-## 2026-10-25 18:22: Added: `traceroot view` (HTML page + Mermaid diagram)
+## 2026-10-25 18:19: Added: `traceroot view` (HTML page + Mermaid diagram)
 **Type:** Added
 
 **What:**
@@ -550,7 +550,7 @@ jev_gate       4               0         1020      550
 
 ---
 
-## 2026-10-25 18:23: Decision: diagram safety, caching, and fallback
+## 2026-10-25 18:20: Decision: diagram safety, caching, and fallback
 **Type:** Decision
 
 **What:**
@@ -568,7 +568,7 @@ work when Claude is down.
 
 ---
 
-## 2026-10-25 18:24: Result: view checked in a real browser
+## 2026-10-25 18:22: Result: view checked in a real browser
 **Type:** Result
 
 **What:**
@@ -587,7 +587,7 @@ work when Claude is down.
 
 ---
 
-## 2026-10-25 18:30: Decision: API backend deferred to future work
+## 2026-10-25 19:30: Decision: API backend deferred to future work
 **Type:** Decision, Removed
 
 **What:**
@@ -605,7 +605,7 @@ Future work. The backend comparison in the README still uses the real `claude -p
 
 ---
 
-## 2026-10-25 18:31: Added: Claude Code skill file
+## 2026-10-25 19:32: Added: Claude Code skill file
 **Type:** Added
 
 **What:** `.claude/skills/traceroot/SKILL.md` tells Claude Code that when a Python command fails, it should:
@@ -619,7 +619,7 @@ because the skill itself costs context tokens.
 
 ---
 
-## 2026-10-25 18:32: Added: README
+## 2026-10-25 19:38: Added: README
 **Type:** Added
 
 **What:** the full README covers:
@@ -637,7 +637,7 @@ and what the code checks").
 
 ---
 
-## 2026-10-25 18:33: Result: fresh-clone install test
+## 2026-10-25 19:42: Result: fresh-clone install test
 **Type:** Result
 
 **What:** cloned the repo into a temporary folder and followed the README steps there (new venv,
@@ -650,3 +650,14 @@ and what the code checks").
 
 **Not verified:** that Claude Code automatically picks up the skill in a live agent session. The
 file format matches the skill convention (YAML frontmatter with `name` and `description`).
+
+---
+
+## 2026-10-25 19:44: Fixed: log timestamps for steps 6–7
+**Type:** Fixed
+
+**What:** corrected the times on the step 6 and step 7 entries to match when the work and its commits
+actually happened. Step 7 entries had been stamped ~18:30 but were written ~19:30–19:42 (checked
+against `git log`).
+
+**Why:** this log is the graded record of the build, so its times should agree with the git history.
