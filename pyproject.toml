@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traceroot"
+version = "0.1.0"
+description = "Trace an error back to its root cause, with fewer agent tokens."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+    "typesafe-sdk>=0.7.5",
+]
+
+[project.optional-dependencies]
+api = ["anthropic>=0.40"]
+
+[project.scripts]
+traceroot = "traceroot.cli:main"
+trt = "traceroot.cli:main"
+
+[tool.setuptools]
+packages = ["traceroot"]

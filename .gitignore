@@ -1,0 +1,5 @@
+.env
+.traceroot/
+__pycache__/
+*.egg-info/
+.venv/
