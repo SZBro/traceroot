@@ -1264,3 +1264,22 @@ of shop-01, outside this repo:
 The intro line now summarizes these numbers and links to the section.
 
 **Why:** the user asked for the README to show the advantages with real data from our tests.
+
+---
+
+## 2026-10-25 22:08: Added: public GitHub repo and results website (GitHub Pages)
+**Type:** Added
+
+**What:**
+- **Public repo:** `https://github.com/SZBro/traceroot`, created with the user's explicit confirmation.
+  All commits were pushed after a history scan found no keys and confirmed `.env` was never tracked.
+- **README on GitHub:** checked in the browser. All 32 in-page links resolve, all 10 tables render,
+  and the relative links point to files that exist.
+- **`docs/index.html`, a static results site:** headline numbers, bar charts, the simple / complex /
+  held-out table, the per-project scaling table, the v1 → v6 experiment table, honest limits, and an
+  agent quick start. Every number comes from `bench/versions/v6_results.jsonl`. It has no JS and works
+  in light or dark mode. It was checked at desktop width and at 375 px: no sideways scroll, and the image loads.
+- **`docs/example-view.html`:** a real `traceroot view` page, so visitors can open the actual output.
+  `docs/img/view-diagram.jpg` is a screenshot of it. Both were checked for local paths (none).
+- **`.claude/launch.json`:** a `traceroot-site` preview server for `docs/`.
+- **README:** a link to the site. GitHub Pages serves `docs/` from `main`.

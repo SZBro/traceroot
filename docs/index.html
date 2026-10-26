@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceRoot Results</title>
+<meta name="description" content="TraceRoot: trace a Python error back to its root cause with fewer agent tokens. Benchmark results on 54 planted bugs.">
+<style>
+  :root {
+    --bg: #f8f7f4; --panel: #ffffff; --ink: #1c1917; --muted: #6b6560; --line: #e5e2dc;
+    --accent: #b45309; --accent-soft: #fef3c7; --base: #94a3b8; --base-soft: #e2e8f0;
+    --good: #15803d; --good-soft: #dcfce7; --bad: #b91c1c; --bad-soft: #fee2e2; --code: #f1efea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141312; --panel: #1d1c1a; --ink: #ecebe8; --muted: #a39e98; --line: #33312e;
+      --accent: #f59e0b; --accent-soft: #3a2a10; --base: #64748b; --base-soft: #273140;
+      --good: #4ade80; --good-soft: #12301d; --bad: #f87171; --bad-soft: #3a1717; --code: #262522;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141312; --panel: #1d1c1a; --ink: #ecebe8; --muted: #a39e98; --line: #33312e;
+    --accent: #f59e0b; --accent-soft: #3a2a10; --base: #64748b; --base-soft: #273140;
+    --good: #4ade80; --good-soft: #12301d; --bad: #f87171; --bad-soft: #3a1717; --code: #262522;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1000px; margin: 0 auto; padding: 40px 16px 80px; }
+  a { color: var(--accent); }
+  h1 { font-size: clamp(30px, 5vw, 44px); margin: 0; letter-spacing: -0.02em; }
+  h2 { font-size: 24px; margin: 56px 0 8px; letter-spacing: -0.01em; }
+  h3 { font-size: 17px; margin: 24px 0 8px; }
+  p.lead { font-size: 19px; color: var(--muted); max-width: 720px; margin: 8px 0 0; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  code, pre { font: 14px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+        overflow-x: auto; margin: 12px 0; }
+  .links { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 0; }
+  .btn { display: inline-block; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+         background: var(--panel); color: var(--ink); text-decoration: none; font-weight: 600; font-size: 14px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 28px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .kpi .v { font-size: 34px; font-weight: 750; letter-spacing: -0.02em; color: var(--accent); }
+  .kpi .l { color: var(--muted); font-size: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+  .bars { display: grid; gap: 14px; }
+  .bar-row .label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px; gap: 8px; flex-wrap: wrap; }
+  .bar-row .label b { font-variant-numeric: tabular-nums; }
+  .track { height: 14px; background: var(--base-soft); border-radius: 7px; overflow: hidden; margin: 3px 0; }
+  .fill { height: 100%; border-radius: 7px; }
+  .fill.tr { background: var(--accent); }
+  .fill.bl { background: var(--base); }
+  .legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-bottom: 10px; flex-wrap: wrap; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .tag.good { background: var(--good-soft); color: var(--good); }
+  .tag.bad { background: var(--bad-soft); color: var(--bad); }
+  .tag.same { background: var(--base-soft); color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  figure { margin: 14px 0; }
+  figure img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  ul.honest li { margin: 6px 0; }
+  footer { margin-top: 64px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); padding-top: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TraceRoot</h1>
+  <p class="lead">Trace a Python error back to its root cause, with fewer agent tokens. A coding agent runs
+    <code>traceroot</code> on a failing command and gets a ~60-token ranked answer, instead of reading the
+    traceback and several files.</p>
+  <div class="links">
+    <a class="btn primary" href="https://github.com/SZBro/traceroot">GitHub repo</a>
+    <a class="btn" href="https://github.com/SZBro/traceroot#set-it-up-for-your-coding-agent">Set it up for your agent</a>
+    <a class="btn" href="https://github.com/SZBro/traceroot/blob/main/bench/RESULTS.md">Per-case results</a>
+    <a class="btn" href="https://github.com/SZBro/traceroot/blob/main/LOG.md">Build log</a>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">−97%</div><div class="l">error text in the agent's context (62 vs. 1,787 tokens per bug)</div></div>
+    <div class="kpi"><div class="v">47/54</div><div class="l">correct root cause, the same as giving Claude every file</div></div>
+    <div class="kpi"><div class="v">−18%</div><div class="l">model tokens per bug (7,040 vs. 8,621)</div></div>
+    <div class="kpi"><div class="v">0.7 s</div><div class="l">simple errors (vs. 8.2 s), with 76% fewer tokens and 18/18 correct</div></div>
+  </div>
+
+  <h2>How it works</h2>
+  <p class="sub">Two models, each with one small job. Plain Python does everything else and checks everything they return.</p>
+  <div class="grid2">
+    <div class="card"><h3>Jev (TypeSafe AI): decides</h3>
+      A cheap <b>gate</b>: is this a simple error whose fix is on the crash line? If yes (p ≥ 0.8), TraceRoot answers
+      immediately and <b>Claude is never called</b>. Otherwise Jev gives a <b>second opinion</b> on Claude's candidates.</div>
+    <div class="card"><h3>Claude (Haiku): generates</h3>
+      3–6 candidate root causes as strict JSON, from the traceback, the crash windows, and the definitions the
+      failing code uses. It never sees whole files.</div>
+    <div class="card"><h3>Plain Python: checks</h3>
+      Parses tracebacks and reads only safe project files (never <code>.env</code> or keys). It follows functions,
+      constants, and methods even after they've returned, validates every <code>file:line</code>, ranks the causes, and saves them so
+      <code>traceroot next</code> is free.</div>
+  </div>
+
+  <h3>What the agent sees</h3>
+<pre>$ traceroot analyze --run "python main.py"
+[1/4] none_value (claude=0.60, Jev agrees) tests/fixtures/medium_none_cart.py:5
+cause: load_cart replaces empty item list with None
+fix: Keep items as an empty list (for example, default to [] instead of None) rather than converting falsy values to None.
+more: `traceroot next`</pre>
+  <p class="sub">The crash is in <code>price_items</code> (line 11), three calls away. The bug is in <code>load_cart</code>
+    (line 5), which isn't in the traceback at all.</p>
+
+  <figure>
+    <img src="img/view-diagram.jpg" alt="TraceRoot HTML view: Mermaid diagram showing checkout calling load_cart, which sets items to None (root cause, yellow), flowing through subtotal into price_items where it crashes (red).">
+    <figcaption><code>traceroot view</code> for humans: a call-path diagram drawn by Claude (yellow = root cause, red = crash).
+      <a href="example-view.html">Open the real view page</a>.</figcaption>
+  </figure>
+
+  <h2>Benchmark</h2>
+  <p class="sub">54 bugs planted (one mutation each) in 6 multi-file Python projects of 170–401 lines. The mutated
+    line is the ground truth. <b>Baseline</b> = the same Claude model, same prompt, given the traceback plus
+    <b>every project file in full</b>. Hit = right file, line within ±1.</p>
+
+  <div class="card">
+    <div class="legend"><span><span class="sw" style="background:var(--accent)"></span>TraceRoot</span>
+      <span><span class="sw" style="background:var(--base)"></span>Claude + every file</span></div>
+    <div class="bars">
+      <div class="bar-row"><div class="label"><span>Agent context per bug (tokens)</span><b>62 vs. 1,787</b></div>
+        <div class="track"><div class="fill tr" style="width:3.5%"></div></div>
+        <div class="track"><div class="fill bl" style="width:100%"></div></div></div>
+      <div class="bar-row"><div class="label"><span>Simple errors: model tokens</span><b>1,968 vs. 8,202</b></div>
+        <div class="track"><div class="fill tr" style="width:17.5%"></div></div>
+        <div class="track"><div class="fill bl" style="width:73.1%"></div></div></div>
+      <div class="bar-row"><div class="label"><span>Simple errors: seconds</span><b>0.7 vs. 8.2</b></div>
+        <div class="track"><div class="fill tr" style="width:7.5%"></div></div>
+        <div class="track"><div class="fill bl" style="width:88.2%"></div></div></div>
+      <div class="bar-row"><div class="label"><span>All bugs: model tokens</span><b>7,040 vs. 8,621</b></div>
+        <div class="track"><div class="fill tr" style="width:62.7%"></div></div>
+        <div class="track"><div class="fill bl" style="width:76.8%"></div></div></div>
+      <div class="bar-row"><div class="label"><span>Complex errors: model tokens</span><b>9,577 vs. 8,830</b></div>
+        <div class="track"><div class="fill tr" style="width:85.3%"></div></div>
+        <div class="track"><div class="fill bl" style="width:78.7%"></div></div></div>
+    </div>
+  </div>
+
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Bugs</th><th>Cases</th><th>TraceRoot correct</th><th>Baseline correct</th><th>TraceRoot tokens</th><th>Baseline tokens</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><b>Simple</b> (Jev gate alone)</td><td class="num">18</td><td class="num"><b>18/18</b></td><td class="num">17/18</td><td class="num"><b>1,968</b></td><td class="num">8,202</td><td><span class="tag good">−76% tokens</span></td></tr>
+        <tr><td>Complex (Claude + Jev)</td><td class="num">36</td><td class="num">29/36</td><td class="num">30/36</td><td class="num">9,577</td><td class="num">8,830</td><td><span class="tag bad">+8% tokens</span></td></tr>
+        <tr><td><b>All</b></td><td class="num">54</td><td class="num"><b>47/54</b></td><td class="num">47/54</td><td class="num"><b>7,040</b></td><td class="num">8,621</td><td><span class="tag good">−18% tokens</span></td></tr>
+        <tr><td>Bug in a different file from the crash</td><td class="num">18</td><td class="num">15/18</td><td class="num">15/18</td><td class="num">–</td><td class="num">–</td><td><span class="tag same">same</span></td></tr>
+        <tr><td><b>Held-out project</b> (written before the last changes)</td><td class="num">9</td><td class="num">6/9 (top-3: 9/9)</td><td class="num">6/9 (top-3: 8/9)</td><td class="num">6,568</td><td class="num">8,171</td><td><span class="tag good">−20% tokens</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Cost as projects grow</h3>
+  <p class="sub">Sending every file gets more expensive with every file. TraceRoot's Claude call stays about flat.</p>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Project</th><th>Lines</th><th>Claude + every file</th><th>TraceRoot's Claude call</th><th>TraceRoot avg per bug</th></tr></thead>
+      <tbody>
+        <tr><td>shop</td><td class="num">170</td><td class="num">6,462</td><td class="num">5,177</td><td class="num">7,455</td></tr>
+        <tr><td>bank</td><td class="num">277</td><td class="num">8,171</td><td class="num">5,223</td><td class="num">6,568</td></tr>
+        <tr><td>library</td><td class="num">291</td><td class="num">8,327</td><td class="num">5,957</td><td class="num">6,812</td></tr>
+        <tr><td>planner</td><td class="num">315</td><td class="num">8,617</td><td class="num">6,223</td><td class="num">7,170</td></tr>
+        <tr><td>logs</td><td class="num">357</td><td class="num">8,924</td><td class="num">5,449</td><td class="num">6,998</td></tr>
+        <tr><td>gradebook</td><td class="num">401</td><td class="num"><b>11,224</b></td><td class="num">5,683</td><td class="num">7,239</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>How the benchmark improved TraceRoot</h2>
+  <p class="sub">Every change sat behind a setting and was kept only if the numbers didn't get worse.</p>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Version</th><th>Change</th><th>What the data said</th><th>Kept?</th></tr></thead>
+      <tbody>
+        <tr><td>v1</td><td>Only read files in the traceback</td><td>4/9 on the first project vs. 9/9 for the baseline: bugs were in code that had already returned</td><td>–</td></tr>
+        <tr><td>v2–v4</td><td>Follow the definitions the failing code uses (Python <code>ast</code>)</td><td>first project went to 8/9 with ~1k tokens of code</td><td><span class="tag good">yes</span></td></tr>
+        <tr><td>v5</td><td>Wider gate (0.8 → 0.65)</td><td>let one <b>wrong</b> quick answer through</td><td><span class="tag bad">reverted</span></td></tr>
+        <tr><td>v5</td><td>Claude orders the causes; Jev = agreement check</td><td>Jev's order was worse (18/30 vs. 22/30)</td><td><span class="tag good">yes</span></td></tr>
+        <tr><td>v5</td><td>Jev sees only crash windows</td><td>−0.9k tokens (simple), −1.6k (complex)</td><td><span class="tag good">yes</span></td></tr>
+        <tr><td>v6</td><td>Follow <code>obj.method()</code>; fuzzy file paths</td><td>dev set 37 → 41 of 45 at no token cost; held-out miss → rank 2</td><td><span class="tag good">yes</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Honest limits</h2>
+  <ul class="honest">
+    <li><b>Complex errors on small projects</b> cost ~8% more model tokens than sending everything, with one fewer correct answer (29/36 vs. 30/36).</li>
+    <li>In one <b>end-to-end agent trial</b> (headless Claude Code, 170-line project), the agent found and used TraceRoot on its own,
+      but used <b>more</b> total tokens (246k vs. 207k), because extra agent turns cost more than the file reading saved.</li>
+    <li>54 cases, each run once, written by the same model family the tool uses. Only the 9 held-out cases were never tuned on.</li>
+    <li>Code context is for <b>Python</b> tracebacks only, so far.</li>
+  </ul>
+
+  <h2>Use it with your agent</h2>
+<pre>pipx install git+https://github.com/SZBro/traceroot.git
+mkdir -p ~/.traceroot &amp;&amp; echo "TYPESAFE_API_KEY=your-key" &gt;&gt; ~/.traceroot/.env
+traceroot install-skill     # Claude Code skill for all your projects
+traceroot check             # verify the setup</pre>
+  <p class="sub">Needs Python 3.10+ and Claude Code installed and logged in. Full steps, including other agents
+    (Codex, Cursor, Copilot), are in the <a href="https://github.com/SZBro/traceroot#set-it-up-for-your-coding-agent">README</a>.</p>
+
+  <footer>
+    TraceRoot was built for TCSS 490, Artifact 3 ("AI Inside It"). All numbers come from
+    <a href="https://github.com/SZBro/traceroot/blob/main/bench/versions/v6_results.jsonl">bench/versions/v6_results.jsonl</a>,
+    and you can regenerate them with <code>python bench/run_bench.py</code>. Token counts for model calls come from the
+    APIs. Agent-context tokens are <code>len(text) // 4</code> estimates.
+  </footer>
+</main>
+</body>
+</html>

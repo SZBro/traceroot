@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceRoot View</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1c1917; --muted: #6b6560; --line: #e4e2dd;
+    --accent: #b45309; --accent-soft: #fef3c7; --ok: #15803d; --ok-soft: #dcfce7;
+    --warn: #b91c1c; --warn-soft: #fee2e2; --code: #f1f0ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161514; --panel: #1f1e1c; --ink: #ecebe8; --muted: #a39e98; --line: #34322f;
+      --accent: #f59e0b; --accent-soft: #3b2a10; --ok: #4ade80; --ok-soft: #12301d;
+      --warn: #f87171; --warn-soft: #3a1717; --code: #2a2926;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 32px 0 12px; }
+  code, pre { font: 13px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  .error { background: var(--warn-soft); color: var(--warn); padding: 10px 14px; border-radius: 8px;
+           overflow-wrap: anywhere; margin: 12px 0; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); font-size: 13px; }
+  .facts b { color: var(--ink); font-weight: 600; }
+  .cause { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 14px 16px; margin-bottom: 10px; }
+  .cause.chosen { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .cause header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .cause h3 { margin: 0; font-size: 16px; flex: 1 1 260px; }
+  .rank { font-weight: 700; color: var(--accent); }
+  .cause p { margin: 8px 0 0; }
+  .fix { color: var(--ink); }
+  .hint { color: var(--muted); font-size: 13px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 6px;
+          font-size: 13px; color: var(--muted); }
+  .meta code { background: var(--code); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+  .cat { background: var(--accent-soft); color: var(--accent); padding: 1px 8px; border-radius: 999px; }
+  .score b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .track { display: inline-block; width: 60px; height: 6px; background: var(--line); border-radius: 3px;
+           margin-left: 6px; vertical-align: middle; overflow: hidden; }
+  .bar { display: block; height: 100%; background: var(--accent); }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--code); color: var(--muted); }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .diagram { background: #ffffff; border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+             overflow-x: auto; }
+  .diagram .mermaid { display: flex; justify-content: center; margin: 0; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  details pre { background: var(--code); padding: 12px; border-radius: 6px; overflow-x: auto; }
+  summary { cursor: pointer; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>TraceRoot</h1>
+  <div class="error"><code>TypeError: &#x27;NoneType&#x27; object is not iterable</code></div>
+  <div class="facts">
+    <span>Path: <b>Claude candidates, scored by Jev</b></span>
+    <span>Jev gate: <b>other_or_complex (p=0.99)</b></span>
+    <span>Ranked by: <b>claude</b></span>
+    <span>Claude tokens: <b>3557</b> · Jev tokens: <b>2462</b></span>
+    <span>2026-10-25T21:50:02</span>
+  </div>
+
+  <h2>Diagram for cause #1</h2>
+  <div class="diagram"><pre class="mermaid">flowchart TD
+  A[&quot;checkout(2) medium_none_cart.py line 20&quot;] --&gt;|&quot;load_cart(2)&quot;| B[&quot;load_cart line 5 sets items to None&quot;]:::cause
+  B --&gt;|&quot;items=None in returned cart&quot;| C[&quot;subtotal line 15 reads cart items&quot;]
+  C --&gt;|&quot;cart items=None&quot;| D[&quot;price_items line 11 iterates items&quot;]:::crash
+  classDef cause fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#1c1917
+  classDef crash fill:#fecaca,stroke:#b91c1c,stroke-width:2px,color:#1c1917</pre></div>
+  <p class="note">drawn by Claude. Yellow = root cause, red = crash.</p>
+
+  <h2>Ranked causes (4)</h2>
+  
+      <article class="cause chosen">
+        <header>
+          <span class="rank">#1</span>
+          <h3>load_cart replaces empty item list with None</h3>
+          <span class="tag ok" title="same rank from both models">agree</span>
+        </header>
+        <div class="meta">
+          <span class="cat">none_value</span>
+          <code>tests/fixtures/medium_none_cart.py:5</code>
+          <span class="score" title="Jev probability">Jev p <b>0.99</b><span class="track"><span class="bar" style="width:99%"></span></span></span>
+          <span class="score" title="Claude's own confidence">Claude <b>0.60</b></span>
+        </div>
+        <p>For user 2, carts.get returns [], which is falsy, so line 5 sets items to None and that None flows through the returned cart. The bad value is created here, several calls before the crash.</p>
+        <p class="fix"><b>Fix:</b> Keep items as an empty list (for example, default to [] instead of None) rather than converting falsy values to None.</p>
+        
+      </article>
+      <article class="cause">
+        <header>
+          <span class="rank">#2</span>
+          <h3>price_items does not guard against None items</h3>
+          <span class="tag ok" title="same rank from both models">agree</span>
+        </header>
+        <div class="meta">
+          <span class="cat">none_value</span>
+          <code>tests/fixtures/medium_none_cart.py:11</code>
+          <span class="score" title="Jev probability">Jev p <b>0.01</b><span class="track"><span class="bar" style="width:1%"></span></span></span>
+          <span class="score" title="Claude's own confidence">Claude <b>0.20</b></span>
+        </div>
+        <p>The list comprehension iterates over items without checking for None, so any None input crashes here. This is where the error surfaces, but the None itself originates upstream.</p>
+        <p class="fix"><b>Fix:</b> Add a guard such as items = items or [] before the comprehension, or check for None explicitly.</p>
+        <p class="hint">Diagram: <code>traceroot view 2</code></p>
+      </article>
+      <article class="cause">
+        <header>
+          <span class="rank">#3</span>
+          <h3>subtotal passes cart items without validating them</h3>
+          <span class="tag ok" title="same rank from both models">agree</span>
+        </header>
+        <div class="meta">
+          <span class="cat">none_value</span>
+          <code>tests/fixtures/medium_none_cart.py:15</code>
+          <span class="score" title="Jev probability">Jev p <b>0.00</b><span class="track"><span class="bar" style="width:0%"></span></span></span>
+          <span class="score" title="Claude's own confidence">Claude <b>0.10</b></span>
+        </div>
+        <p>subtotal forwards cart[&quot;items&quot;] directly to price_items without checking whether it is None. This lets the bad value from load_cart propagate into pricing.</p>
+        <p class="fix"><b>Fix:</b> Normalize cart[&quot;items&quot;] to a list before calling price_items.</p>
+        <p class="hint">Diagram: <code>traceroot view 3</code></p>
+      </article>
+      <article class="cause">
+        <header>
+          <span class="rank">#4</span>
+          <h3>carts.get returns None for unknown user IDs</h3>
+          <span class="tag ok" title="same rank from both models">agree</span>
+        </header>
+        <div class="meta">
+          <span class="cat">none_value</span>
+          <code>tests/fixtures/medium_none_cart.py:3</code>
+          <span class="score" title="Jev probability">Jev p <b>0.00</b><span class="track"><span class="bar" style="width:0%"></span></span></span>
+          <span class="score" title="Claude's own confidence">Claude <b>0.05</b></span>
+        </div>
+        <p>carts.get(user_id) without a default yields None for any user not in the dictionary, which then sets items to None on line 5. This is a secondary path to the same None value.</p>
+        <p class="fix"><b>Fix:</b> Pass a default to carts.get, such as carts.get(user_id, []), so missing carts produce an empty list.</p>
+        <p class="hint">Diagram: <code>traceroot view 4</code></p>
+      </article>
+
+  <h2>Code sent to the models</h2>
+  <details><summary>Show code slices (lines marked &gt;&gt; are traceback frames)</summary>
+    <pre>--- tests/fixtures/medium_none_cart.py (lines 1-25) ---
+    1 | def load_cart(user_id):
+    2 |     carts = {1: [&quot;book&quot;, &quot;pen&quot;], 2: []}
+    3 |     items = carts.get(user_id)
+    4 |     if not items:
+    5 |         items = None
+    6 |     return {&quot;user&quot;: user_id, &quot;items&quot;: items}
+    7 | 
+    8 | 
+    9 | def price_items(items):
+   10 |     prices = {&quot;book&quot;: 12.5, &quot;pen&quot;: 1.25}
+&gt;&gt; 11 |     return [prices[i] for i in items]
+   12 | 
+   13 | 
+   14 | def subtotal(cart):
+&gt;&gt; 15 |     return sum(price_items(cart[&quot;items&quot;]))
+   16 | 
+   17 | 
+   18 | def checkout(user_id):
+   19 |     cart = load_cart(user_id)
+&gt;&gt; 20 |     return round(subtotal(cart) * 1.1, 2)
+   21 | 
+   22 | 
+   23 | if __name__ == &quot;__main__&quot;:
+   24 |     print(checkout(1))
+   25 |     print(checkout(2))</pre>
+  </details>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, securityLevel: "strict", theme: "default" });</script>
+</body>
+</html>

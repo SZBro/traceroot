@@ -30,6 +30,8 @@ and **97% less error text in the agent's context**. Simple errors take **0.7 s i
 
 Commands: `traceroot` or the short alias `trt` (not `tr`, which is a standard Unix command).
 
+**Results website:** [szbro.github.io/traceroot](https://szbro.github.io/traceroot/), with charts and screenshots.
+
 **Contents:** [Why use it](#why-use-it-the-advantages-measured) ·
 [**Set it up for your coding agent**](#set-it-up-for-your-coding-agent) ·
 [How it works](#how-it-works) · [Responsibilities](#responsibilities-what-each-part-does) ·
