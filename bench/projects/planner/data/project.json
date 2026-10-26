@@ -1,0 +1,16 @@
+{
+  "name": "Website relaunch",
+  "start": "2026-11-02",
+  "tasks": [
+    {"id": "REQ", "name": "Gather requirements", "duration": "3d", "owner": "maya", "priority": "1", "deps": []},
+    {"id": "UX", "name": "Wireframes", "duration": "4d", "owner": "jon", "priority": "2", "deps": ["REQ"]},
+    {"id": "API", "name": "API design", "duration": "2d", "owner": "ravi", "priority": "1", "deps": ["REQ"]},
+    {"id": "DB", "name": "Database schema", "duration": "3d", "owner": "ravi", "priority": "2", "deps": ["API"]},
+    {"id": "FE", "name": "Frontend build", "duration": "2w", "owner": "jon", "priority": "1", "deps": ["UX", "API"]},
+    {"id": "BE", "name": "Backend build", "duration": "8d", "owner": "ravi", "priority": "1", "deps": ["DB"]},
+    {"id": "CMS", "name": "Content migration", "duration": "5d", "owner": "maya", "priority": "3", "deps": ["DB"]},
+    {"id": "QA", "name": "Testing", "duration": "1w", "owner": "lee", "priority": "1", "deps": ["FE", "BE", "CMS"]},
+    {"id": "DOC", "name": "Docs", "duration": "2d", "owner": "maya", "priority": "3", "deps": ["FE"]},
+    {"id": "GO", "name": "Launch", "duration": "1d", "owner": "maya", "priority": "1", "deps": ["QA", "DOC"]}
+  ]
+}

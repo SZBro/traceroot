@@ -808,3 +808,83 @@ check on all 18 cases showed the same bug-line coverage, with average code sent 
   ~4k of it is Jev.
 - **Next:** projects 3–4 with larger code (~700 lines), where the baseline's cost should grow and
   TraceRoot's should stay about flat.
+
+---
+
+## 2026-10-25 20:25: Result: project 3 ("gradebook", 401 lines)
+**Type:** Result
+
+**What:** added `bench/projects/gradebook/` (models, CSV loader with validation, grading policy,
+analytics, rendering) with 9 mutations. TraceRoot v3 got 6/9 top-1, the baseline 9/9. The gate
+answered 3/9 correctly at ~2.5k tokens vs. ~10k.
+
+**Misses:**
+- **grade-04 (two hops):** Claude named the right cause ("assignment_from_row leaves max_points as a
+  string") but cited the call site, because the body of a function *called inside* `load_course` was
+  never sent.
+- **grade-05:** a method on an object (`course.find_student`), which the lookup doesn't follow.
+- **grade-03:** Jev ranked a candidate with no file first.
+
+---
+
+## 2026-10-25 20:30: Changed: second hop for definitions; tool frozen
+**Type:** Changed, Decision
+
+**What:** after hop-1 definitions, TraceRoot also adds project functions *called inside* them, capped at
+`MAX_HOP2_LINES = 60` lines. A free check showed 23 of the 27 dev-set bug lines now reach the model.
+Of the 4 that don't, 2 are missing-import cases scored at the crash line and 2 involve object methods.
+
+**Decision:** **froze the tool at 20:31.** Projects 1–3 are the *development set*, because they were
+used to make changes. Project 4 is written *after* the freeze as a **held-out set** and is never
+used for tuning. This keeps the reported numbers from being overfit.
+
+---
+
+## 2026-10-25 20:45: Result: benchmark v4, development set (27 cases)
+**Type:** Result
+
+TraceRoot got **22/27 top-1 (25/27 in top 3)**; the baseline got 24/27. The gate answered 8/27, all
+correct.
+
+**Finding:** ordering TraceRoot's own candidates by *Claude's* rank would get 16/19 on the full
+path, but *Jev's* order got 14/19. Jev's re-ranking is slightly hurting. It's left unchanged and
+reported, because the tool is frozen.
+
+---
+
+## 2026-10-25 20:51: Result: held-out project ("planner", 315 lines, 9 cases)
+**Type:** Result
+
+**What:** `bench/projects/planner/` (dependency graph, topological sort, critical path, calendar with
+holidays, Gantt chart), with 9 mutations decided before any run.
+
+| Held-out | Top-1 | Avg model tokens |
+|---|---|---|
+| TraceRoot | **8/9** | 9,431 |
+| Baseline | **8/9** | 8,617 |
+
+The gate answered 3/9, all correct, at ~3.4k tokens vs. ~8.4k. TraceRoot found plan-01 (the
+`UNIT_DAYS` constant), which the baseline missed. It missed plan-04 (an object method,
+`project.get`), as on the dev set.
+
+---
+
+## 2026-10-25 20:55: Result: final benchmark numbers (36 cases)
+**Type:** Result, Decision
+
+| Errors | Cases | TraceRoot top-1 | Baseline top-1 | TraceRoot model tok | Baseline model tok | Agent context (baseline → TraceRoot) |
+|---|---|---|---|---|---|---|
+| **Simple (gate)** | 11 | 11/11 | 11/11 | **2,966 (−65%)** | 8,412 | **2,100 → 52 (−98%)** |
+| Complex | 25 | 19/25 | 21/25 | 11,072 (+23%) | 8,981 | 1,735 → 59 (−97%) |
+| All | 36 | 30/36 (83%) | 32/36 (89%) | 8,595 (−2%) | 8,807 | 1,846 → 57 (−97%) |
+
+**Decision (with the user):** position TraceRoot as **cheaper, cleaner debugging for simple errors**.
+It cuts both model tokens (−65%) and the error text put into the agent's context (−98%), with equal
+accuracy. For complex errors, the honest claim is a much smaller agent context (−97%) at somewhat
+lower accuracy and higher model spend.
+
+**Also:**
+- Added a "simple vs. complex" table to `run_bench.py`, and a dev vs. held-out split.
+- Added 7 unit tests for the benchmark's scoring and case building (`tests/test_bench.py`).
+  41 tests pass in total.
+- Rewrote the README Results section around these numbers, with the weak spots under Limitations.

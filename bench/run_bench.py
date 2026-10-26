@@ -34,6 +34,7 @@ RESULTS = OUT / "results.jsonl"
 SUMMARY = BENCH / "RESULTS.md"
 TRACEROOT_EXE = Path(sys.executable).parent / ("traceroot.exe" if os.name == "nt" else "traceroot")
 LINE_TOLERANCE = 1
+HELD_OUT_PROJECTS = {p for p, spec in PROJECTS.items() if spec.get("held_out")}
 
 
 def est(text: str) -> int:
@@ -129,7 +130,7 @@ def run_case(project: str, spec: dict, mut: dict, baseline: bool) -> dict:
     agent_project = est(case.stderr) + sum(est(p.read_text(encoding="utf-8")) for p in project_sources(case))
 
     row = {"id": case.id, "project": project, "kind": case.kind, "distance": case.distance,
-           "crash_ok": case.crash_ok,
+           "crash_ok": case.crash_ok, "held_out": bool(spec.get("held_out")),
            "truth": f"{case.truth_file}:{case.truth_line}", "crash": f"{case.crash_file}:{case.crash_line}",
            "error_line": parsed.error_line,
            "agent_tokens_referenced": agent_referenced, "agent_tokens_project": agent_project,
@@ -192,14 +193,39 @@ def summarize(rows: list[dict]) -> str:
            "## Accuracy and model cost", "",
            "| Method | Top-1 | Top-3 | Found at all | Avg model tokens / case | Avg latency |",
            "|---|---|---|---|---|---|"]
-    for name, s in (("TraceRoot", tr), ("Baseline: Claude + full files", bl)):
-        if s["n"]:
-            out.append(f"| {name} | {pct(s['top1'], s['n'])} | {pct(s['top3'], s['n'])} | {pct(s['any'], s['n'])} "
-                       f"| {s['tokens']:,.0f} | {s['ms'] / 1000:.1f} s |")
+    held = [r for r in rows if r.get("held_out") or r["project"] in HELD_OUT_PROJECTS]
+    dev = [r for r in rows if r not in held]
+    groups = [("all", rows)] + ([("dev set (tuned on)", dev), ("**held-out set**", held)] if held and dev else [])
+    for label, subset in groups:
+        for name, key in (("TraceRoot", "traceroot"), ("Baseline: Claude + full files", "baseline")):
+            s = method_stats(subset, key)
+            if s["n"]:
+                out.append(f"| {name}, {label} ({s['n']}) | {pct(s['top1'], s['n'])} | {pct(s['top3'], s['n'])} "
+                           f"| {pct(s['any'], s['n'])} | {s['tokens']:,.0f} | {s['ms'] / 1000:.1f} s |")
     if tr["n"] and bl["n"] and bl["tokens"]:
         diff = 100 * (1 - tr["tokens"] / bl["tokens"])
         word = "fewer" if diff >= 0 else "more"
         out += ["", f"TraceRoot used **{abs(diff):.0f}% {word} model tokens** per case than the full-file baseline."]
+
+    out += ["", "## Simple errors vs. complex errors", "",
+            "Split by the path TraceRoot took: **simple** = the Jev gate answered alone; **complex** = Claude + Jev.",
+            "\"Agent context\" = tokens the calling agent must read: the traceback + files it references "
+            "(baseline) vs. TraceRoot's compact answer.", "",
+            "| Errors | Cases | TraceRoot top-1 | Baseline top-1 | TraceRoot model tokens | Baseline model tokens "
+            "| Model-token change | Agent context: baseline -> TraceRoot |",
+            "|---|---|---|---|---|---|---|---|"]
+    for label, subset in (("simple (gate)", gate), ("complex (full)", full), ("all", rows)):
+        if not subset:
+            continue
+        b = [r for r in subset if "baseline" in r]
+        t_tok = avg(r["traceroot"]["model_tokens"] for r in subset)
+        b_tok = avg(r["baseline"]["model_tokens"] for r in b)
+        change = 100 * (t_tok / b_tok - 1) if b_tok else 0
+        ctx_b = avg(r["agent_tokens_referenced"] for r in subset)
+        ctx_t = avg(r["traceroot"]["returned_tokens"] for r in subset)
+        out.append(f"| {label} | {len(subset)} | {pct(sum(r['traceroot']['top1'] for r in subset), len(subset))} "
+                   f"| {pct(sum(r['baseline']['top1'] for r in b), len(b))} | {t_tok:,.0f} | {b_tok:,.0f} "
+                   f"| {change:+.0f}% | {ctx_b:,.0f} -> {ctx_t:,.0f} ({100 * (ctx_t / ctx_b - 1):+.0f}%) |")
 
     out += ["", "## Does Jev's re-ranking help? (full-path cases only)", "",
             f"Same TraceRoot candidates, two orderings: **Jev score** (what TraceRoot ships) top-1 "

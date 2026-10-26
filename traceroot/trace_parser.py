@@ -330,57 +330,81 @@ def related_definitions(kept: list, slices: list[CodeSlice], root: Path,
     covered = [(s.file, s.start, s.end) for s in slices]
     out, seen, total = [], set(), 0
     crash_frame = kept[-1][0] if kept else None
-    for fr, p in reversed(kept):                     # crash frame first: its names matter most
+
+    # hop 1: names used by the traceback functions (crash frame first: its names matter most)
+    first: list[tuple[Path, str, str]] = []          # (file, name, used_in)
+    for fr, p in reversed(kept):
         parsed = _parse_file(p)
         if not parsed:
             continue
-        tree, _ = parsed
-        func = _enclosing_function(tree, fr.line)
+        func = _enclosing_function(parsed[0], fr.line)
         if func is None:
             continue
-        local_defs = _top_level_defs(tree)
-        imp_names, imp_modules = _imports(tree, p, root)
-        wanted = []                                  # (file, name) in order of first use
         scope = _frame_nodes(func, fr.line, fr is crash_frame)
-        for node in (n for part in scope for n in ast.walk(part)):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                if node.id in local_defs and node.id != func.name:
-                    wanted.append((p, node.id))
-                elif node.id in imp_names:
-                    wanted.append(imp_names[node.id])
-            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
-                    and node.value.id in imp_modules:
-                wanted.append((imp_modules[node.value.id], node.attr))
-        for file, name in sorted(set(wanted), key=wanted.index):
-            if (file, name) in seen:
-                continue
-            seen.add((file, name))
-            target = _parse_file(file)
-            node = target and _top_level_defs(target[0]).get(name)
-            if not node:
-                continue
-            start = min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
-            end = node.end_lineno or node.lineno
-            if isinstance(node, ast.ClassDef):           # header + fields only, not every method
-                methods = [b.lineno for b in node.body if isinstance(b, (ast.FunctionDef, ast.AsyncFunctionDef))]
-                if methods:
-                    end = max(node.lineno, min(methods) - 1)
-            rel = file.relative_to(root).as_posix()
-            if any(f == rel and s <= start and end <= e for f, s, e in covered):
-                continue                             # already inside a frame window
-            end = min(end, start + max_def_lines - 1)
-            if total + (end - start + 1) > max_total:
-                continue
-            total += end - start + 1
-            covered.append((rel, start, end))
-            lines = target[1]
-            width = len(str(end))
-            text = "\n".join(f"   {n:>{width}} | {lines[n - 1]}" for n in range(start, end + 1))
-            truncated = end < (node.end_lineno or end) and not isinstance(node, ast.ClassDef)
-            out.append(CodeSlice(file=rel, start=start, end=end, error_line=0,
-                                 text=text + ("\n   ... (truncated)" if truncated else ""),
-                                 label=f"definition of {name}, used in {func.name}()"))
+        first += [(f, n, func.name) for f, n in _project_names(p, scope, root) if n != func.name]
+    # hop 2: project functions *called* inside those definitions (where a bad value is often built)
+    second: list[tuple[Path, str, str]] = []
+    for file, name, _ in first:
+        target = _parse_file(file)
+        node = target and _top_level_defs(target[0]).get(name)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            calls = [c.func for c in ast.walk(node) if isinstance(c, ast.Call)]
+            second += [(f, n, name) for f, n in _project_names(file, calls, root) if n != name]
+
+    hop2_lines = 0
+    for i, (file, name, used_in) in enumerate(first + second):
+        is_hop2 = i >= len(first)
+        if (file, name) in seen:
+            continue
+        seen.add((file, name))
+        target = _parse_file(file)
+        node = target and _top_level_defs(target[0]).get(name)
+        if not node:
+            continue
+        start = min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
+        end = node.end_lineno or node.lineno
+        if isinstance(node, ast.ClassDef):           # header + fields only, not every method
+            methods = [b.lineno for b in node.body if isinstance(b, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            if methods:
+                end = max(node.lineno, min(methods) - 1)
+        rel = file.relative_to(root).as_posix()
+        if any(f == rel and s <= start and end <= e for f, s, e in covered):
+            continue                                 # already inside a frame window
+        end = min(end, start + max_def_lines - 1)
+        size = end - start + 1
+        if total + size > max_total or (is_hop2 and hop2_lines + size > config.MAX_HOP2_LINES):
+            continue
+        total += size
+        hop2_lines += size if is_hop2 else 0
+        covered.append((rel, start, end))
+        lines = target[1]
+        width = len(str(end))
+        text = "\n".join(f"   {n:>{width}} | {lines[n - 1]}" for n in range(start, end + 1))
+        truncated = end < (node.end_lineno or end) and not isinstance(node, ast.ClassDef)
+        out.append(CodeSlice(file=rel, start=start, end=end, error_line=0,
+                             text=text + ("\n   ... (truncated)" if truncated else ""),
+                             label=f"definition of {name}, used in {used_in}()"))
     return out
+
+
+def _project_names(here: Path, nodes: list[ast.AST], root: Path) -> list[tuple[Path, str]]:
+    """Project-defined names (same-file top-level, or imported from a project module) used in `nodes`."""
+    parsed = _parse_file(here)
+    if not parsed:
+        return []
+    local_defs = _top_level_defs(parsed[0])
+    imp_names, imp_modules = _imports(parsed[0], here, root)
+    wanted = []
+    for node in (n for part in nodes for n in ast.walk(part)):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+            if node.id in local_defs:
+                wanted.append((here, node.id))
+            elif node.id in imp_names:
+                wanted.append(imp_names[node.id])
+        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
+                and node.value.id in imp_modules:
+            wanted.append((imp_modules[node.value.id], node.attr))
+    return sorted(set(wanted), key=wanted.index)
 
 
 def slice_for_file(path: str, root: Path | None = None) -> CodeSlice | None:

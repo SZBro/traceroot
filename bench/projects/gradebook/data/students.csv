@@ -1,0 +1,13 @@
+student_id,first,last,section,email
+S1001,Ada,Lovelace,A,ada.lovelace@uni.edu
+S1002,Grace,Hopper,B,grace.hopper@uni.edu
+S1003,Alan,Turing,A,alan.turing@uni.edu
+S1004,Edsger,Dijkstra,B,edsger.dijkstra@uni.edu
+S1005,Barbara,Liskov,A,barbara.liskov@uni.edu
+S1006,Ken,Thompson,B,ken.thompson@uni.edu
+S1007,Margaret,Hamilton,A,margaret.hamilton@uni.edu
+S1008,Linus,Torvalds,B,linus.torvalds@uni.edu
+S1009,Radia,Perlman,A,radia.perlman@uni.edu
+S1010,Donald,Knuth,B,donald.knuth@uni.edu
+S1011,Frances,Allen,A,frances.allen@uni.edu
+S1012,Tim,Berners-Lee,B,tim.bernerslee@uni.edu

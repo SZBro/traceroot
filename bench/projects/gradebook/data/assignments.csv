@@ -1,0 +1,11 @@
+assignment_id,category,max_points,due
+HW1,homework,20,2026-09-12
+HW2,homework,20,2026-09-26
+HW3,homework,20,2026-10-10
+Q1,quiz,10,2026-09-19
+Q2,quiz,10,2026-10-03
+Q3,quiz,10,2026-10-17
+LAB1,lab,15,2026-09-22
+LAB2,lab,15,2026-10-13
+MID,exam,100,2026-10-08
+PROJ,project,50,2026-10-21
