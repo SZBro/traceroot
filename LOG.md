@@ -1247,7 +1247,7 @@ of shop-01, outside this repo:
 
 ---
 
-## 2026-10-25 22:05: Changed: README "Why use it" section with measured advantages
+## 2026-10-25 22:02: Changed: README "Why use it" section with measured advantages
 **Type:** Changed
 
 **What:** a new section near the top of the README, computed from `bench/versions/v6_results.jsonl`
