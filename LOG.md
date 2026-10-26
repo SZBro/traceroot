@@ -335,3 +335,33 @@ Claude Code's fixed system prompt) than the "raw" traceback + files (~313). Trac
 in the **calling agent's context** (it reads 4 short lines instead of the traceback and files), and
 it grows with file size. The Jev gate exists to skip that Claude call on easy errors, and step 4
 will show how often it does.
+
+---
+
+## 2026-10-25 18:08: Changed: cut `claude -p` overhead with `--strict-mcp-config` and `--system-prompt`
+**Type:** Changed, Result
+
+**What:** the CLI backend now also passes `--strict-mcp-config` (don't load the user's MCP servers) and
+`--system-prompt SYSTEM_PROMPT` (replaces Claude Code's built-in system prompt with one line: "reply
+with only valid JSON"). `SYSTEM_PROMPT` lives with the other prompt constants in `claude_client.py`.
+
+**Why:** step 3 showed each Claude call spending more tokens than the raw traceback + files it
+replaces. Measured on the same tiny prompt:
+
+| `claude -p` flags | Input tokens | List-price cost | Time |
+|---|---|---|---|
+| default | ~41,000 | $0.0031 | 5.2 s |
+| `--tools ""` | ~15,000 | $0.0012 | 3.3 s |
+| + `--strict-mcp-config` | ~5,400 | $0.0005 | 3.3 s |
+| + `--system-prompt` | **~1,300** | **$0.0003** | 2.5 s |
+
+Most of the old floor was the user's connected MCP servers plus Claude Code's own instructions.
+TraceRoot needs neither, because every task instruction is already in our prompt.
+
+**Result:** re-ran `medium_none_cart` to check that quality didn't drop. It gave the same #1 answer
+(line 5, `load_cart`, confidence 0.60) and the same 4 alternatives in the same order. A full
+analyze call went from ~7.8k to **~3.5k tokens** ($0.00105). 17/17 unit tests still pass.
+
+**Decision:** keep `cli` as the default backend. With these flags its overhead is close to a raw API
+call, and it needs no paid API key (it uses the user's Claude login and counts against plan usage
+limits). The API backend stays optional (step 7) and goes in the README comparison.

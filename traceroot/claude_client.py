@@ -39,7 +39,11 @@ CANDIDATE_SCHEMA = """{"candidates": [
    "claude_rank": 1, "claude_confidence": 0.0}
 ]}"""
 
-RETRY_SUFFIX = "\n\nYour previous reply was not valid JSON. Return ONLY the JSON object, nothing else."
+# Replaces Claude Code's built-in system prompt for the cli backend (and is the system prompt for
+# the api backend). All task instructions live in the user prompt, so this only sets the format.
+SYSTEM_PROMPT = "You are a precise debugging assistant. Reply with only valid JSON, no prose."
+
+RETRY_SUFFIX ="\n\nYour previous reply was not valid JSON. Return ONLY the JSON object, nothing else."
 
 
 class ClaudeError(RuntimeError):
@@ -83,11 +87,13 @@ def extract_json(text: str) -> dict | None:
 
 
 def _call_cli(prompt: str) -> tuple[str, int, float]:
-    """`claude -p` with tools off, from a neutral folder, prompt on stdin (avoids Windows arg limits)."""
+    """`claude -p` from a neutral folder, prompt on stdin (avoids Windows arg limits).
+    Tools off, no MCP servers, and our own system prompt: cuts overhead from ~41k to ~1.3k tokens."""
     exe = config.claude_bin()
     if not exe:
         raise ClaudeError("`claude` not found. Install Claude Code or set TRACEROOT_CLAUDE_BIN in .env.")
-    cmd = [exe, "-p", "--output-format", "json", "--model", config.CLAUDE_MODEL, "--tools", ""]
+    cmd = [exe, "-p", "--output-format", "json", "--model", config.CLAUDE_MODEL, "--tools", "",
+           "--strict-mcp-config", "--system-prompt", SYSTEM_PROMPT]
     with tempfile.TemporaryDirectory(prefix="traceroot-") as neutral:
         try:
             proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8",
