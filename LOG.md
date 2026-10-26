@@ -584,3 +584,69 @@ work when Claude is down.
 - 5 new unit tests (33 total, all passing): Mermaid validation, the fallback shape, HTML escaping,
   caching (Claude is called once across two renders), the fallback path, and an out-of-range `n`.
 - Model cost for this step: 2 Claude calls (re-analyze + 1 diagram) and 2 Jev calls.
+
+---
+
+## 2026-10-25 18:30: Decision: API backend deferred to future work
+**Type:** Decision, Removed
+
+**What:**
+- The `api` Claude backend is **not built tonight**. `TRACEROOT_CLAUDE_BACKEND=api` gives a clear
+  "not implemented yet; use cli" error.
+- `claude_client._call_api` has a comment explaining what to implement (`anthropic` SDK,
+  `SYSTEM_PROMPT`, `usage` tokens).
+- Removed `anthropic` from `requirements.txt`. It stays as an optional extra in `pyproject.toml`.
+- `.env.example` marks `ANTHROPIC_API_KEY` as "future, leave blank".
+
+**Why:** it's first on the spec's cut list, and the user has no API key tonight, so it couldn't be
+tested. Untested code in a graded repo is a liability. The user is open to adding it later
+(they can generate a test key), or to another user contributing it, so the README lists it under
+Future work. The backend comparison in the README still uses the real `claude -p` measurements.
+
+---
+
+## 2026-10-25 18:31: Added: Claude Code skill file
+**Type:** Added
+
+**What:** `.claude/skills/traceroot/SKILL.md` tells Claude Code that when a Python command fails, it should:
+- run `traceroot analyze --run "<cmd>"`, or pipe the error in, **before** reading the traceback or opening files
+- act on the top cause, opening only that file and line
+- run `traceroot next` if the cause is wrong (no model call)
+- use `traceroot view` only when the user asks for a visual
+
+**Why:** build step 7. This is how an agent actually uses the tool. It's kept short on purpose,
+because the skill itself costs context tokens.
+
+---
+
+## 2026-10-25 18:32: Added: README
+**Type:** Added
+
+**What:** the full README covers:
+- what TraceRoot does, with a real example
+- the architecture diagram
+- the **Responsibilities** section: what Jev decides (gate + scorer), what Claude generates
+  (candidates + diagram), and everything plain code does and checks
+- install and `.env` setup, plus usage for every command and the skill
+- the backend comparison (`claude -p` vs. the API: cost, latency, reliability) with the overhead table
+- the per-script results table and `traceroot stats` output
+- the Claude-vs-Jev comparison, a frank reading of the token numbers, limitations, and future work
+
+**Why:** a graded requirement ("the README states exactly what the models are responsible for
+and what the code checks").
+
+---
+
+## 2026-10-25 18:33: Result: fresh-clone install test
+**Type:** Result
+
+**What:** cloned the repo into a temporary folder and followed the README steps there (new venv,
+`pip install -e .`).
+- `.env`, `.venv`, and `.traceroot/` were **not** in the clone, so `.gitignore` works.
+- `trt --help` works. `analyze --run` and the pipe form (`cmd 2>&1 | trt analyze`) both work.
+- With no Jev key and Claude unavailable, it printed one notice per problem and fell back to the
+  crash site, with no crash.
+- `trt stats` works, and 33/33 unit tests pass in the clone.
+
+**Not verified:** that Claude Code automatically picks up the skill in a live agent session. The
+file format matches the skill convention (YAML frontmatter with `name` and `description`).
