@@ -1197,3 +1197,50 @@ agent context. The held-out set is also a tie on top-1 (6/9 each), and TraceRoot
   misleading, so it now shows `claude=…, jev=…`. 1 new test (48 total).
 
 **Why:** the repo is about to be published, and the README is its front page.
+
+---
+
+## 2026-10-25 22:02: Added: agent setup (`install-skill`, `check`, user config) and a real agent trial
+**Type:** Added, Result, Decision
+
+**Why:** the user pointed out that the README didn't explain how an *agent* uses TraceRoot on its own
+projects. Until now, the skill and command only worked inside this repo and its venv.
+
+**What changed:**
+- **`~/.traceroot/.env` user config** (or `TRACEROOT_CONFIG`) is read from any project, so a normal install works.
+- **`traceroot install-skill [--project] [--force]`** copies the packaged skill
+  (`traceroot/data/SKILL.md`, now shipped as package data) into `~/.claude/skills/traceroot/`, or into
+  the current project. It won't overwrite a skill file the user has edited unless `--force` is given.
+- **`traceroot check [--live]`** checks the setup: the claude CLI, whether the Jev key is set (never
+  printed), the parser, which skills are installed, and optionally a live Claude call.
+- **The skill** now covers the `alt:` line, running from the project root, and what to do if
+  `traceroot` isn't installed. The repo copy and packaged copy must match, enforced by a test.
+- **A plain `pip install` was verified** in a throwaway venv, and `install-skill` worked from it.
+- **README:** a detailed "Set it up for your coding agent" section (6 steps):
+  - install with pipx or pip
+  - keys in the user config
+  - install the skill
+  - permissions allowlist
+  - `.gitignore` for `.traceroot/`
+  - `check`, plus an `AGENTS.md` snippet for other agents (Codex, Cursor, Aider, Copilot)
+- 4 new tests (52 total).
+
+**Result: real agent trial** (`bench/agent_trial.py`): headless Claude Code (Haiku) on a fresh copy
+of shop-01, outside this repo:
+
+| Run | Used TraceRoot? | Fixed? | Turns | Agent tokens | Cost |
+|---|---|---|---|---|---|
+| A: with skill | **yes**: loaded the skill, then ran `traceroot analyze --run` | yes | 9 | 245,717 | $0.0062 |
+| B: without | – | yes | 6 | 207,454 | $0.0050 |
+| A2: reworded skill | yes, but only after printing all files | yes | 9 | 346,335 | $0.0076 |
+
+**Reading:**
+- **The integration works:** an unmodified agent found the skill and used the tool.
+- **But on a 170-line project, the agent's total tokens went *up*.** Each extra agent turn re-sends its
+  ~20k system prompt, which outweighs the file reading TraceRoot replaces when all 5 files fit in one
+  `cat`.
+- The reworded skill (A2: "don't run the command first; read only ~15 lines") came out worse, so
+  **it was reverted** under the keep-only-if-not-worse rule. With n = 1 per arm, this is mostly
+  agent-behavior noise.
+- The README says all this plainly. The benchmark's token savings are for the debugging step, not
+  end-to-end agent sessions. An agent-level benchmark on larger projects is now under Future work.

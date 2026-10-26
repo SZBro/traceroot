@@ -23,3 +23,6 @@ trt = "traceroot.cli:main"
 
 [tool.setuptools]
 packages = ["traceroot"]
+
+[tool.setuptools.package-data]
+traceroot = ["data/*.md"]

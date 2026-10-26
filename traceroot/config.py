@@ -5,9 +5,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# .env in the folder you run traceroot from wins; TraceRoot's own .env is the fallback.
+# Settings are read from (first wins): real environment variables, ./.env in the folder you run
+# traceroot from, your user config ~/.traceroot/.env (works from any project), TraceRoot's own .env.
 TOOL_DIR = Path(__file__).resolve().parent.parent
+USER_CONFIG = Path(os.environ.get("TRACEROOT_CONFIG") or Path.home() / ".traceroot" / ".env")
 load_dotenv(Path.cwd() / ".env")
+load_dotenv(USER_CONFIG)
 load_dotenv(TOOL_DIR / ".env")
 
 

@@ -1,6 +1,7 @@
 """TraceRoot CLI: traceroot / trt  (analyze | next | view | stats)."""
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -85,6 +86,53 @@ def cmd_stats(args) -> int:
     return 0
 
 
+SKILL_SOURCE = Path(__file__).resolve().parent / "data" / "SKILL.md"
+
+
+def cmd_install_skill(args) -> int:
+    """Copy the Claude Code skill to ~/.claude/skills (all projects) or ./.claude/skills (this project)."""
+    base = Path.cwd() if args.project else Path.home()
+    dest = base / ".claude" / "skills" / "traceroot" / "SKILL.md"
+    if dest.exists() and not args.force and dest.read_text(encoding="utf-8") != SKILL_SOURCE.read_text(encoding="utf-8"):
+        print(f"traceroot: {dest} already exists and differs; rerun with --force to overwrite")
+        return 1
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(SKILL_SOURCE.read_text(encoding="utf-8"), encoding="utf-8")
+    print(f"traceroot: installed the Claude Code skill at {dest}")
+    print("  restart Claude Code (or start a new session) so it picks the skill up")
+    return 0
+
+
+def cmd_check(args) -> int:
+    """Check the setup without spending anything: claude binary, Jev key present, parser works."""
+    from . import config
+    ok = True
+    exe = config.claude_bin()
+    print(f"[{'ok' if exe else 'FAIL'}] claude CLI: {exe or 'not found (install Claude Code or set TRACEROOT_CLAUDE_BIN)'}")
+    ok &= bool(exe)
+    key = bool(os.environ.get("TYPESAFE_API_KEY", "").strip())
+    print(f"[{'ok' if key else 'warn'}] TYPESAFE_API_KEY: {'set' if key else 'missing (Jev disabled; Claude-only ranking)'}"
+          f"  (looked in env, ./.env, {config.USER_CONFIG})")
+    parsed = trace_parser.parse_traceback('Traceback (most recent call last):\n  File "x.py", line 1, in <module>\n'
+                                          "NameError: name 'y' is not defined\n")
+    good = parsed.exc_type == "NameError" and len(parsed.frames) == 1
+    print(f"[{'ok' if good else 'FAIL'}] traceback parser")
+    ok &= good
+    print(f"[info] project root: {config.PROJECT_ROOT}  (state in {config.STATE_DIR})")
+    for scope, path in (("user", Path.home()), ("project", Path.cwd())):
+        skill = path / ".claude" / "skills" / "traceroot" / "SKILL.md"
+        print(f"[{'ok' if skill.exists() else 'info'}] {scope} skill: {skill if skill.exists() else 'not installed'}")
+    if args.live:
+        from . import claude_client
+        try:
+            claude_client.ask_claude('Reply with only this JSON: {"ok": true}')
+            print("[ok] live Claude call")
+        except claude_client.ClaudeError as e:
+            print(f"[FAIL] live Claude call: {e}")
+            ok = False
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -113,6 +161,15 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("stats", help="summarize past runs")
     s.set_defaults(func=cmd_stats)
+
+    i = sub.add_parser("install-skill", help="install the Claude Code skill (default: for all your projects)")
+    i.add_argument("--project", action="store_true", help="install into ./.claude/skills instead of ~/.claude/skills")
+    i.add_argument("--force", action="store_true", help="overwrite an existing, different skill file")
+    i.set_defaults(func=cmd_install_skill)
+
+    c = sub.add_parser("check", help="verify the setup (claude CLI, Jev key, parser, skill)")
+    c.add_argument("--live", action="store_true", help="also make one tiny Claude call")
+    c.set_defaults(func=cmd_check)
 
     args = ap.parse_args(argv)
     return args.func(args)

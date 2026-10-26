@@ -31,12 +31,185 @@ at `load_cart` (line 5), where the bad value is created. That function isn't in 
 
 Commands: `traceroot` or the short alias `trt` (not `tr`, which is a standard Unix command).
 
-**Contents:** [How it works](#how-it-works) · [Responsibilities](#responsibilities-what-each-part-does) ·
-[Install](#install) · [Usage](#usage) · [Backends](#claude-backends-claude--p-vs-the-api) ·
+**Contents:** [**Set it up for your coding agent**](#set-it-up-for-your-coding-agent) ·
+[How it works](#how-it-works) · [Responsibilities](#responsibilities-what-each-part-does) ·
+[Developer install](#developer-install) · [Usage](#usage) · [Backends](#claude-backends-claude--p-vs-the-api) ·
 [Results](#results) · [Limitations](#limitations) · [Future work](#future-work) ·
 [Build log](LOG.md)
 
 ---
+
+## Set it up for your coding agent
+
+TraceRoot is built to be used **by coding agents**. A human can run the same commands, but the goal is
+that your agent calls `traceroot` on its own whenever a Python command fails, instead of reading the
+whole traceback and opening files. Setup takes about 5 minutes and works for every project on your
+machine.
+
+### What you need
+
+- **Python 3.10+**
+- **Claude Code, installed and logged in.** TraceRoot calls Claude through the `claude` command
+  (`claude -p`), so no Anthropic API key is needed. Check it with `claude --version`. If `claude`
+  isn't found, install it from [claude.com/claude-code](https://claude.com/claude-code), run `claude`
+  once to log in, and make sure its folder is on your `PATH`.
+- **A TypeSafe API key** for Jev (from your TypeSafe console). This is optional: without it,
+  TraceRoot still works, but there's no Jev gate and no second opinion.
+
+### Step 1: Install the `traceroot` command so every project can use it
+
+The command has to be on your `PATH` in *any* folder, because your agent runs it from inside your
+own projects.
+
+```bash
+# Recommended: an isolated install that's on PATH everywhere
+pipx install git+https://github.com/SZBro/traceroot.git
+
+# Or, without pipx
+pip install --user git+https://github.com/SZBro/traceroot.git
+```
+
+Then check that it worked:
+
+```bash
+traceroot --help
+```
+
+(`trt` is the same command, shorter.) If you'd rather work from a clone, see
+[Developer install](#developer-install). In that case the agent's shell must have that venv's
+`Scripts/` (Windows) or `bin/` folder on its `PATH`.
+
+### Step 2: Put your Jev key in your user config
+
+The user config at `~/.traceroot/.env` is read no matter which project you're in. Settings are read
+in this order, and the first one found wins:
+1. real environment variables
+2. `./.env` in the folder you run from
+3. `~/.traceroot/.env`
+
+```bash
+mkdir -p ~/.traceroot
+echo "TYPESAFE_API_KEY=your-key-here" >> ~/.traceroot/.env
+```
+
+On Windows, `~` is `C:\Users\<you>`. The key is never printed, logged, or sent anywhere except
+TypeSafe's API. Other settings you can put here are listed in [Settings](#settings).
+
+### Step 3: Install the Claude Code skill
+
+The skill is a short instruction file that tells Claude Code when and how to use TraceRoot.
+
+```bash
+traceroot install-skill            # for ALL your projects: ~/.claude/skills/traceroot/SKILL.md
+traceroot install-skill --project  # for just this project:  ./.claude/skills/traceroot/SKILL.md
+```
+
+Use `--project` and commit the file if you want your whole team's Claude Code to use TraceRoot in that
+repo. **Restart Claude Code** (or start a new session) afterwards so it loads the skill.
+
+### Step 4 (optional): Let the agent run TraceRoot without permission prompts
+
+In your project's `.claude/settings.json` (or `~/.claude/settings.json` for all projects):
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(traceroot:*)", "Bash(trt:*)"]
+  }
+}
+```
+
+### Step 5: Ignore TraceRoot's state folder in each project
+
+TraceRoot keeps its last result and run stats in `.traceroot/` at the project root. Add it to the
+project's `.gitignore`:
+
+```bash
+echo ".traceroot/" >> .gitignore
+```
+
+### Step 6: Check that everything is set up
+
+```bash
+traceroot check          # claude found? Jev key set? parser OK? skill installed? (free, no model calls)
+traceroot check --live   # also makes one tiny Claude call
+```
+
+Expected output:
+
+```text
+[ok] claude CLI: C:\Users\you\.local\bin\claude.exe
+[ok] TYPESAFE_API_KEY: set  (looked in env, ./.env, C:\Users\you\.traceroot\.env)
+[ok] traceback parser
+[info] project root: C:\path\to\your\project  (state in C:\path\to\your\project\.traceroot)
+[ok] user skill: C:\Users\you\.claude\skills\traceroot\SKILL.md
+```
+
+Then try it for real. Open Claude Code in a Python project and ask: *"`python main.py` is failing,
+find the root cause and fix it."* You should see the agent run
+`traceroot analyze --run "python main.py"` before it opens any files.
+
+### What the agent does with it
+
+A real answer from the benchmark (case shop-04, where the crash is in `cart.py` and the bug is in
+`catalog.py`):
+
+```text
+agent: traceroot analyze --run "python main.py"
+       [1/4] none_value (claude=0.45, Jev prefers #4) shop/catalog.py:31
+       cause: find_product lowercases lookup key but catalog keys keep case
+       fix: Normalize SKUs the same way in both load_catalog and find_product, for example by storing keys as sku.strip().lower().
+       alt (Jev's pick, #4): build_cart does not handle a missing product main.py:14
+       more: `traceroot next`
+agent: (opens shop/catalog.py near line 31, applies the fix, reruns)
+       ...if that wasn't it:  traceroot next   (free, no model call)
+```
+
+That's 5 lines for the agent to read instead of the traceback plus 3 files. Jev disagreed here, so
+the agent also sees the strongest alternative.
+
+### Other agents (Codex, Cursor, Aider, Copilot, ...)
+
+Agents without Claude Code skills can follow the same rules from their instruction file, such as
+`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, or `.github/copilot-instructions.md`. Paste this in:
+
+```markdown
+## Debugging Python errors
+When a Python command fails with a traceback, run `traceroot analyze --run "<command>"` from the
+project root BEFORE reading the full traceback or opening files. Act on the top cause (open only the
+file:line it names). If it's wrong, run `traceroot next` (free). If it prints "no more candidates",
+debug normally. Add `--json` for the full explanation.
+```
+
+TraceRoot still calls Claude through `claude -p` under the hood, so Claude Code must be installed and
+logged in, even if your agent is a different product.
+
+### Does it actually help an agent? (one real trial, honestly)
+
+`bench/agent_trial.py` runs **headless Claude Code (Haiku)** on a fresh copy of a buggy project, twice:
+once with the skill installed, and once without it. On case shop-01 (the price is never converted;
+the crash is in another file):
+
+| | With TraceRoot skill | Without |
+|---|---|---|
+| The agent found and used TraceRoot on its own | **yes**: it loaded the skill, then ran `traceroot analyze --run` | – |
+| Fixed the right line | yes | yes |
+| Agent turns / total agent tokens | 9 / ~246k | 6 / ~207k |
+
+**The setup works**: an unmodified agent discovered the skill and used TraceRoot. But on this
+**tiny** project (170 lines), it didn't reduce the agent's total tokens. Each extra agent turn re-sends
+the agent's own system prompt (~20k tokens), and that outweighs the file reading TraceRoot saves when
+the agent could just print all 5 files at once. A second trial with reworded skill instructions came
+out worse (346k): the agent ran the command and read files first anyway. That wording was reverted.
+
+The token savings measured in [Results](#results) are for the *debugging step itself* (what has to
+be read to find the cause). They should matter more on real projects, where "just read every file"
+isn't an option. A proper multi-case agent benchmark is listed under Future work.
+
+### Using it yourself (humans)
+
+The same commands work by hand: `traceroot analyze --run "python app.py"`, then `traceroot next`.
+`traceroot view` opens a local HTML page with all causes ranked and a diagram of the call path.
 
 ## How it works
 
@@ -112,9 +285,9 @@ everything the models return.
   - Diagram fails: plain code draws the call path from the traceback.
 - **Stats:** one CSV row per run, with token estimates.
 
-## Install
+## Developer install
 
-Requires Python 3.10+ and [Claude Code](https://claude.com/claude-code) (the `claude` command,
+To work on TraceRoot itself, or run the benchmark, clone it. Requires Python 3.10+ and [Claude Code](https://claude.com/claude-code) (the `claude` command,
 logged in). You also need your own TypeSafe API key; nothing is hosted, and each user brings their
 own keys.
 
@@ -127,7 +300,11 @@ pip install -e .
 cp .env.example .env            # then put your TYPESAFE_API_KEY in .env
 ```
 
-`.env` is git-ignored and never printed. Settings in `.env`:
+`.env` is git-ignored and never printed.
+
+### Settings
+
+These go in `.env` or `~/.traceroot/.env`:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -136,6 +313,10 @@ cp .env.example .env            # then put your TYPESAFE_API_KEY in .env
 | `TRACEROOT_CLAUDE_MODEL` | `claude-haiku-5-5` | Model for candidates and diagrams. |
 | `TRACEROOT_CLAUDE_BIN` | (auto) | Path to `claude` if it isn't on PATH. |
 | `GATE_THRESHOLD` | `0.8` | Minimum Jev probability for a gate-only answer. |
+| `TRACEROOT_RANK_BY` | `claude` | `claude` (Jev = second opinion) or `jev` (v4 behavior). |
+| `TRACEROOT_JEV_CONTEXT` | `windows` | What code Jev sees: `windows` or `all`. |
+| `TRACEROOT_FOLLOW_METHODS` / `TRACEROOT_FUZZY_PATHS` | `1` | v6 features; `0` turns them off. |
+| `TRACEROOT_CONFIG` | `~/.traceroot/.env` | Path to the user config file. |
 
 ## Usage
 
@@ -149,6 +330,8 @@ traceroot analyze --json ...                 # full JSON (explanation, both rank
 traceroot next        # next-ranked cause, from .traceroot/last.json (no model call)
 traceroot view [n]    # HTML page: all causes ranked + a Mermaid diagram of cause n (default 1)
 traceroot stats       # summary of every run in .traceroot/runs.csv
+traceroot install-skill [--project]   # install the Claude Code skill
+traceroot check [--live]              # verify the setup
 ```
 
 **With Claude Code:** `.claude/skills/traceroot/SKILL.md` tells Claude Code to run `traceroot analyze`
@@ -274,7 +457,7 @@ The single-file scripts in `tests/fixtures/` (`python tests/fixtures/run_all.py`
 they're tiny and the cause is always inside the code window. The benchmark above is the meaningful
 measure.
 
-**Unit tests:** `python -m unittest discover tests` runs 47 tests, none of which call a model. They
+**Unit tests:** `python -m unittest discover tests` runs 52 tests, none of which call a model. They
 cover parsing, safety rules, definition lookup, validation, ranking and the agreement check, the gate
 decision, stats, the HTML view, and the benchmark's own scoring.
 
@@ -311,6 +494,8 @@ decision, stats, the HTML view, and the benchmark's own scoring.
   file?") and switch to full-file mode for those cases.
 - **Cut Jev tokens further:** shorter category descriptions (~300 of the ~1,000 tokens per gate call),
   or skip Jev's second opinion when Claude is already confident.
+- **An agent-level benchmark:** many cases × several runs of `bench/agent_trial.py` on larger
+  projects, to measure end-to-end agent tokens with and without TraceRoot.
 - **Repeat runs** of the benchmark to measure model variance, plus a larger, real-world bug set
   (e.g. BugsInPy).
 - An MCP server, so agents can call TraceRoot as a tool instead of a shell command
