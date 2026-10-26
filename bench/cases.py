@@ -139,7 +139,7 @@ PROJECTS = {
              "find": 'joined=date.fromisoformat(r["joined"]),', "replace": 'joined=r["joined"],'},
         ],
     },
-    # HELD-OUT #3: written at 21:40, BEFORE the v6 changes were implemented; used only for v5-vs-v6.
+    # HELD-OUT #3: written at 21:33 (see git log), BEFORE the v6 changes were implemented; used only for v5-vs-v6.
     "bank": {
         "cmd": "python main.py",
         "held_out": True,

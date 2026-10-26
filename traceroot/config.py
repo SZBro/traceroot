@@ -43,6 +43,11 @@ GATE_THRESHOLD = _float("GATE_THRESHOLD", 0.8)    # 0.65 was tried in v5 and rev
 RANK_BY = os.environ.get("TRACEROOT_RANK_BY", "claude").strip().lower()
 # What code Jev sees: "windows" (v5: traceback + crash windows) or "all" (v4: + one-hop definitions)
 JEV_CONTEXT = os.environ.get("TRACEROOT_JEV_CONTEXT", "windows").strip().lower()
+# v6 experiment (LOG.md 21:32): follow `obj.method()` calls to the one project class defining `method`
+FOLLOW_METHODS = os.environ.get("TRACEROOT_FOLLOW_METHODS", "1").strip() not in ("0", "false", "no", "")
+# v6 experiment: accept a cited file that doesn't exist if exactly one project file has that name
+FUZZY_PATHS = os.environ.get("TRACEROOT_FUZZY_PATHS", "1").strip() not in ("0", "false", "no", "")
+MAX_PROJECT_FILES = 400  # project scan limit for the two features above
 CATEGORIES = [
     "missing_import_or_module",
     "undefined_name_or_typo",

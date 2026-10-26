@@ -1079,7 +1079,7 @@ validation.
 
 ---
 
-## 2026-10-25 21:34: Added: held-out project 6 ("bank"), committed before any v6 code
+## 2026-10-25 21:33: Added: held-out project 6 ("bank"), committed before any v6 code
 **Type:** Added
 
 **What:** `bench/projects/bank/`, a ledger app: money parsing, accounts and a `Bank` class, CSV
@@ -1090,3 +1090,93 @@ object-style code looks, and the mutations weren't picked for the new feature.
 
 **Why commit now:** the git timestamp shows the held-out cases existed before F/P were written.
 library is reclassified as *dev* for v6, because v6 is designed from its misses.
+
+---
+
+## 2026-10-25 21:36: Added: v6 features F and P (behind settings); free context check
+**Type:** Added, Result
+
+**What:**
+- **F (`TRACEROOT_FOLLOW_METHODS`):** `trace_parser.method_index()` scans the project's classes once
+  (safe `.py` files only, capped at 400 files). `_project_names()` resolves an `obj.m(...)` call to
+  `Class.m` when **exactly one** project class defines `m`, and the method then goes through the same
+  capped definition pipeline as before. Dunder methods are skipped, and so are ambiguous names like
+  `add`, when two classes define them.
+- **P (`TRACEROOT_FUZZY_PATHS`):** in `validate_candidates`, if a cited file doesn't resolve,
+  `unique_file_named()` accepts it only when exactly one safe project `.py` file has that name.
+  `.env` and other blocked files can never match.
+- `bench/run_bench.py` has a `v6` config; v4, v5a, and v5 now set both features **off** explicitly.
+- 2 new unit tests (47 total, all pass).
+
+**Free check (no model calls; 45 known cases only, bank not looked at):**
+
+| | Bug line reaches Claude | Avg code tokens sent |
+|---|---|---|
+| v5 (methods off) | 35/45 | 1,342 |
+| v6 (methods on) | **38/45** | 1,390 (+48) |
+
+The newly covered cases are grade-05, plan-04, and lib-04, the three object-method misses. No case lost
+coverage. Next: real runs on the 45 known cases and v5 vs. v6 on held-out bank.
+
+---
+
+## 2026-10-25 21:45: Result: v6 vs. v5, known cases and held-out bank
+**Type:** Result
+
+**45 known cases (dev; F and P were designed from their misses):**
+
+| | v5 | **v6** | Baseline |
+|---|---|---|---|
+| Top-1 | 37/45 | **41/45** | 41/45 |
+| Top-3 | 38/45 | **42/45** | 44/45 |
+| Shown up front (#1 or `alt:`) | 37 | **42** | – |
+| Gate answered / correct | 15 / 15 | 15 / 15 | – |
+| Avg model tokens | 7,143 | **7,135** | 8,711 |
+
+Changes:
+- shop-01: miss → 1 (P rescued the path)
+- grade-05, plan-04, lib-04: miss → 1 (F added the method)
+- plan-01: 3 → 2 (shown via `alt:`)
+
+**Held-out bank (9 cases, committed before v6 code):**
+
+| | v5 | v6 | Baseline |
+|---|---|---|---|
+| Top-1 | **7/9** | 6/9 | 6/9 |
+| Top-3 | 8/9 | **9/9** | 8/9 |
+| Shown up front | 7 | **8** | – |
+| Avg model tokens | 6,614 | 6,568 | 8,171 |
+
+The two held-out changes were checked against the exact context Claude received:
+- **bank-03** (`bank.lookup`): **miss → rank 2. A real F effect**, since `Bank.lookup` was added to
+  the context.
+- **bank-08**: rank 1 → 2, but the context was **identical with F off and on**. Claude just swapped
+  its #1 and #2 between runs. **That's model variance, not a v6 effect.**
+
+---
+
+## 2026-10-25 21:46: Decision: keep F and P; v6 is the default
+**Type:** Decision
+
+Both features are kept. Every held-out change that can be *attributed* to v6 is positive (bank-03), and
+the only drop (bank-08) is unrelated variance. Dev improves +4 top-1 at no token cost.
+
+**Final numbers (v6, all 54 cases):**
+
+| Errors | Cases | TraceRoot top-1 | Baseline top-1 | TraceRoot tokens | Baseline tokens | Agent context |
+|---|---|---|---|---|---|---|
+| Simple (gate) | 18 | **18/18** | 17/18 | **1,968 (−76%)** | 8,202 | **1,922 → 51 (−97%)** |
+| Complex | 36 | 29/36 | 30/36 | 9,577 (+8%) | 8,830 | 1,719 → 68 (−96%) |
+| **All** | 54 | **47/54 (87%)** | **47/54 (87%)** | **7,040 (−18%)** | 8,621 | 1,787 → 62 (−97%) |
+
+**TraceRoot now ties the full-file baseline on top-1 accuracy**, with 18% fewer model tokens and 97% less
+agent context. The held-out set is also a tie on top-1 (6/9 each), and TraceRoot leads on top-3 (9/9 vs.
+8/9).
+
+**Bookkeeping:**
+- `bench/versions/v6_results.jsonl` holds the raw results, and `bench/out/results.jsonl` and
+  `bench/RESULTS.md` are now v6.
+- README: the headline is now "same accuracy, −18% model tokens, −97% agent context". There's a
+  v4 → v5 → v6 experiment table, updated responsibilities (method-following, fuzzy paths), and
+  revised limitations and future work.
+- 47 unit tests pass.

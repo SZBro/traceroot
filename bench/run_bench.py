@@ -36,10 +36,13 @@ TRACEROOT_EXE = Path(sys.executable).parent / ("traceroot.exe" if os.name == "nt
 LINE_TOLERANCE = 1
 
 # TraceRoot settings per version, set explicitly so a local .env can't change what is measured.
+_OFF = {"TRACEROOT_FOLLOW_METHODS": "0", "TRACEROOT_FUZZY_PATHS": "0"}
 CONFIGS = {
-    "v4": {"GATE_THRESHOLD": "0.8", "TRACEROOT_RANK_BY": "jev", "TRACEROOT_JEV_CONTEXT": "all"},
-    "v5a": {"GATE_THRESHOLD": "0.65", "TRACEROOT_RANK_BY": "claude", "TRACEROOT_JEV_CONTEXT": "windows"},
-    "v5": {"GATE_THRESHOLD": "0.8", "TRACEROOT_RANK_BY": "claude", "TRACEROOT_JEV_CONTEXT": "windows"},
+    "v4": {"GATE_THRESHOLD": "0.8", "TRACEROOT_RANK_BY": "jev", "TRACEROOT_JEV_CONTEXT": "all", **_OFF},
+    "v5a": {"GATE_THRESHOLD": "0.65", "TRACEROOT_RANK_BY": "claude", "TRACEROOT_JEV_CONTEXT": "windows", **_OFF},
+    "v5": {"GATE_THRESHOLD": "0.8", "TRACEROOT_RANK_BY": "claude", "TRACEROOT_JEV_CONTEXT": "windows", **_OFF},
+    "v6": {"GATE_THRESHOLD": "0.8", "TRACEROOT_RANK_BY": "claude", "TRACEROOT_JEV_CONTEXT": "windows",
+           "TRACEROOT_FOLLOW_METHODS": "1", "TRACEROOT_FUZZY_PATHS": "1"},
 }
 ACTIVE_CONFIG = "v5"
 HELD_OUT_PROJECTS = {p for p, spec in PROJECTS.items() if spec.get("held_out")}

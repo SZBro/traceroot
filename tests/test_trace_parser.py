@@ -1,6 +1,7 @@
 """Unit tests for trace_parser. Run: python -m unittest discover tests"""
 import sys
 import tempfile
+from unittest import mock
 import unittest
 from pathlib import Path
 
@@ -137,6 +138,47 @@ class RelatedDefinitionTests(unittest.TestCase):
         self.assertEqual(labels["definition of Box"], ("app/core.py", 6, 8))         # fields, not methods
         self.assertNotIn("definition of json", labels)                               # stdlib skipped
         self.assertNotIn("definition of run", labels)                                # not itself
+
+
+class MethodAndFuzzyTests(unittest.TestCase):
+    """v6: follow obj.method() to the single project class defining it; unique file-name matching."""
+
+    FILES = {
+        "app/__init__.py": "",
+        "app/dirs.py": "class Directory:\n    def __init__(self):\n        self.d = {}\n\n"
+                       "    def find(self, k):\n        return self.d.get(k.lower())\n\n"
+                       "    def add(self, k, v):\n        self.d[k] = v\n",
+        "app/other.py": "class Box:\n    def add(self, x):\n        return x\n",
+        "main.py": "from app.dirs import Directory\n\n\ndef run(d):\n    m = d.find('A')\n"
+                   "    d.add('b', 1)\n    return m.name\n\n\nrun(Directory())\n",
+    }
+
+    def _project(self, d):
+        root = Path(d).resolve()
+        for rel, text in self.FILES.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(text)
+        return root
+
+    def test_follows_unique_method_but_not_ambiguous_one(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._project(d)
+            trace = (f'Traceback (most recent call last):\n  File "{root / "main.py"}", line 7, in run\n'
+                     "AttributeError: 'NoneType' object has no attribute 'name'\n")
+            with mock.patch.object(tp.config, "FOLLOW_METHODS", True):
+                labels = [s.label for s in tp.parse(trace, root).slices if s.label]
+            with mock.patch.object(tp.config, "FOLLOW_METHODS", False):
+                labels_off = [s.label for s in tp.parse(trace, root).slices if s.label]
+        self.assertTrue(any(lb.startswith("definition of Directory.find") for lb in labels))
+        self.assertFalse(any("add" in lb for lb in labels))        # two classes define add -> skipped
+        self.assertFalse(any("Directory.find" in lb for lb in labels_off))
+
+    def test_unique_file_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._project(d)
+            self.assertEqual(tp.unique_file_named("dirs.py", root), (root / "app" / "dirs.py").resolve())
+            self.assertIsNone(tp.unique_file_named("missing.py", root))
+            self.assertIsNone(tp.unique_file_named(".env", root))   # only safe .py files are candidates
 
 
 class SafetyTests(unittest.TestCase):

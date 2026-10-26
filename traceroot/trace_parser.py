@@ -346,7 +346,7 @@ def related_definitions(kept: list, slices: list[CodeSlice], root: Path,
     second: list[tuple[Path, str, str]] = []
     for file, name, _ in first:
         target = _parse_file(file)
-        node = target and _top_level_defs(target[0]).get(name)
+        node = target and _find_def(target[0], name)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             calls = [c.func for c in ast.walk(node) if isinstance(c, ast.Call)]
             second += [(f, n, name) for f, n in _project_names(file, calls, root) if n != name]
@@ -358,7 +358,7 @@ def related_definitions(kept: list, slices: list[CodeSlice], root: Path,
             continue
         seen.add((file, name))
         target = _parse_file(file)
-        node = target and _top_level_defs(target[0]).get(name)
+        node = target and _find_def(target[0], name)
         if not node:
             continue
         start = min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
@@ -388,12 +388,14 @@ def related_definitions(kept: list, slices: list[CodeSlice], root: Path,
 
 
 def _project_names(here: Path, nodes: list[ast.AST], root: Path) -> list[tuple[Path, str]]:
-    """Project-defined names (same-file top-level, or imported from a project module) used in `nodes`."""
+    """Project-defined names (same-file top-level, or imported from a project module) used in `nodes`.
+    With FOLLOW_METHODS, `obj.m(...)` calls also resolve to "Class.m" when one project class defines m."""
     parsed = _parse_file(here)
     if not parsed:
         return []
     local_defs = _top_level_defs(parsed[0])
     imp_names, imp_modules = _imports(parsed[0], here, root)
+    methods = method_index(root) if config.FOLLOW_METHODS else {}
     wanted = []
     for node in (n for part in nodes for n in ast.walk(part)):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
@@ -404,7 +406,66 @@ def _project_names(here: Path, nodes: list[ast.AST], root: Path) -> list[tuple[P
         elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) \
                 and node.value.id in imp_modules:
             wanted.append((imp_modules[node.value.id], node.attr))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and len(methods.get(node.func.attr, [])) == 1:
+            wanted.append(methods[node.func.attr][0])
     return sorted(set(wanted), key=wanted.index)
+
+
+# ---------- project scan (methods, file names) ----------
+
+_SCANS: dict[Path, list[Path]] = {}
+_METHODS: dict[Path, dict[str, list[tuple[Path, str]]]] = {}
+
+
+def project_files(root: Path) -> list[Path]:
+    """Safe .py files in the project (blocked dirs/files skipped), capped at MAX_PROJECT_FILES."""
+    root = root.resolve()
+    if root not in _SCANS:
+        found = []
+        for p in sorted(root.rglob("*.py")):
+            if resolve_in_project(str(p), root):
+                found.append(p.resolve())
+                if len(found) >= config.MAX_PROJECT_FILES:
+                    break
+        _SCANS[root] = found
+    return _SCANS[root]
+
+
+def method_index(root: Path) -> dict[str, list[tuple[Path, str]]]:
+    """method name -> [(file, "Class.method")] across project classes (dunder methods skipped)."""
+    root = root.resolve()
+    if root not in _METHODS:
+        index: dict[str, list[tuple[Path, str]]] = {}
+        for p in project_files(root):
+            parsed = _parse_file(p)
+            if not parsed:
+                continue
+            for cls in (n for n in parsed[0].body if isinstance(n, ast.ClassDef)):
+                for fn in cls.body:
+                    if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and not fn.name.startswith("__"):
+                        index.setdefault(fn.name, []).append((p, f"{cls.name}.{fn.name}"))
+        _METHODS[root] = index
+    return _METHODS[root]
+
+
+def unique_file_named(name: str, root: Path) -> Path | None:
+    """The one project file whose name matches `name`'s file name, else None (used for fuzzy paths)."""
+    base = Path(name.replace("\\", "/")).name
+    hits = [p for p in project_files(root) if p.name == base]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _find_def(tree: ast.Module, name: str) -> ast.stmt | None:
+    """A top-level definition, or "Class.method"."""
+    if "." not in name:
+        return _top_level_defs(tree).get(name)
+    cls_name, meth = name.split(".", 1)
+    cls = _top_level_defs(tree).get(cls_name)
+    if isinstance(cls, ast.ClassDef):
+        return next((n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                     and n.name == meth), None)
+    return None
 
 
 def slice_for_file(path: str, root: Path | None = None) -> CodeSlice | None:

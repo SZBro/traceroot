@@ -69,6 +69,8 @@ def validate_candidates(raw: list, root: Path) -> list[dict]:
 
         file, line = c.get("file"), c.get("line")
         p = trace_parser.resolve_in_project(file, root) if isinstance(file, str) and file.strip() else None
+        if p is None and config.FUZZY_PATHS and isinstance(file, str) and file.strip():
+            p = trace_parser.unique_file_named(file, root)     # e.g. "catalog.py" -> "shop/catalog.py"
         file = p.relative_to(root).as_posix() if p else None
         try:
             line = int(line) if file and int(line) > 0 else None
