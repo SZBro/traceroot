@@ -1180,3 +1180,20 @@ agent context. The held-out set is also a tie on top-1 (6/9 each), and TraceRoot
   v4 → v5 → v6 experiment table, updated responsibilities (method-following, fuzzy paths), and
   revised limitations and future work.
 - 47 unit tests pass.
+
+---
+
+## 2026-10-25 21:53: Changed: README polish for GitHub; `next` shows both scores
+**Type:** Changed, Fixed
+
+**What:**
+- **README:**
+  - The example output is now a real v6 run (`claude=0.60, Jev agrees`), plus a `next` example.
+  - Added a contents line with links to each section.
+  - Fixed the stale responsibility line about ranking (Claude orders the causes, Jev checks agreement).
+  - The clone URL is now `https://github.com/SZBro/traceroot.git`.
+  - Updated the project-files list (6 apps, 54 mutations, `compare.py`, `versions/`).
+- **Fixed:** `traceroot next` printed only `p=<Jev>` for later causes. Under Claude ordering that's
+  misleading, so it now shows `claude=…, jev=…`. 1 new test (48 total).
+
+**Why:** the repo is about to be published, and the README is its front page.

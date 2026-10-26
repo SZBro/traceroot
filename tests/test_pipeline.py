@@ -77,6 +77,12 @@ class V5RankingTests(unittest.TestCase):
         self.assertIn("Jev agrees", out)
         self.assertNotIn("alt", out)
 
+    def test_next_shows_both_scores_when_claude_ordered(self):
+        c = cause("b", 2, 0.3, jev=0.7) | {"title": "t", "category": "wrong_type"}
+        self.assertTrue(pipeline.format_cause(c, 1, 3, both_scores=True).startswith(
+            "[2/3] wrong_type (claude=0.30, jev=0.70)"))
+        self.assertIn("(p=0.70)", pipeline.format_cause(c, 1, 3))          # v4 style unchanged
+
     def test_no_jev_scores_means_no_check(self):
         self.assertIsNone(pipeline.agreement([cause("a", 1, 0.6)]))
 

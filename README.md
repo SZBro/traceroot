@@ -6,11 +6,17 @@ TraceRoot is a local Python CLI that you, or a coding agent like Claude Code, ru
 command. A coding agent would normally read a long traceback and open several files. TraceRoot
 returns a compact, ranked root cause instead, one at a time:
 
-```
+```console
 $ traceroot analyze --run "python tests/fixtures/medium_none_cart.py"
-[1/3] none_value (p=0.98) tests/fixtures/medium_none_cart.py:5
-cause: load_cart sets items to None for empty carts
-fix: Keep items as an empty list (remove the None assignment) so downstream iteration always receives an iterable.
+[1/4] none_value (claude=0.60, Jev agrees) tests/fixtures/medium_none_cart.py:5
+cause: load_cart replaces empty item list with None
+fix: Keep items as an empty list (for example, default to [] instead of None) rather than converting falsy values to None.
+more: `traceroot next`
+
+$ traceroot next
+[2/4] none_value (claude=0.20, jev=0.01) tests/fixtures/medium_none_cart.py:11
+cause: price_items does not guard against None items
+fix: Add a guard such as items = items or [] before the comprehension, or check for None explicitly.
 more: `traceroot next`
 ```
 
@@ -24,6 +30,11 @@ at `load_cart` (line 5), where the bad value is created. That function isn't in 
 - **Scope:** Python tracebacks. Other languages fall back to text-only analysis, with no code context.
 
 Commands: `traceroot` or the short alias `trt` (not `tr`, which is a standard Unix command).
+
+**Contents:** [How it works](#how-it-works) · [Responsibilities](#responsibilities-what-each-part-does) ·
+[Install](#install) · [Usage](#usage) · [Backends](#claude-backends-claude--p-vs-the-api) ·
+[Results](#results) · [Limitations](#limitations) · [Future work](#future-work) ·
+[Build log](LOG.md)
 
 ---
 
@@ -92,8 +103,8 @@ everything the models return.
   - caps the list at 6
 - **Validating Jev's output:** rejects scores whose options don't match the candidates. Malformed
   diagrams are rejected, and model text is HTML-escaped in the view.
-- **Ranking and decisions:** applies the gate threshold, and ranks by Jev, falling back to Claude
-  when Jev is unavailable.
+- **Ranking and decisions:** applies the gate threshold, orders causes by Claude's rank, and records
+  whether Jev agrees with #1. Without Jev, it simply skips the agreement check.
 - **Saving and fallbacks:** `last.json` holds the ranked list and a cursor, so `next` makes **no**
   model calls. Diagrams are cached.
   - Claude down: you get the crash site.
@@ -108,10 +119,10 @@ logged in). You also need your own TypeSafe API key; nothing is hosted, and each
 own keys.
 
 ```bash
-git clone <this-repo-url> traceroot
+git clone https://github.com/SZBro/traceroot.git
 cd traceroot
 python -m venv .venv
-.venv/Scripts/activate          # Windows (Git Bash). macOS/Linux: source .venv/bin/activate
+source .venv/Scripts/activate   # Windows (Git Bash). macOS/Linux: source .venv/bin/activate
 pip install -e .
 cp .env.example .env            # then put your TYPESAFE_API_KEY in .env
 ```
@@ -227,7 +238,7 @@ test of v6:
 ### Improvement experiments: v4 → v5 → v6
 
 Every change went behind a setting and was **kept only if it didn't make the numbers worse**, checked
-on a project written *before* the change (LOG.md, 21:04–21:50):
+on a project written *before* the change ([LOG.md](LOG.md) has every step):
 
 | Version | Change | Result | Kept? |
 |---|---|---|---|
@@ -305,7 +316,7 @@ decision, stats, the HTML view, and the benchmark's own scoring.
 - An MCP server, so agents can call TraceRoot as a tool instead of a shell command
 - An auto-run hook that triggers on failed commands
 - Parsing non-Python tracebacks (JavaScript, Java, ...)
-- A VS Code extension or a hosted website
+- A VS Code extension
 - Diagrams for every cause, and more test scripts with ambiguous causes to measure Claude/Jev disagreement
 
 ## Project files
@@ -313,7 +324,8 @@ decision, stats, the HTML view, and the benchmark's own scoring.
 ```
 traceroot/      cli, config, trace_parser, jev_client, claude_client, pipeline, store, stats, render_html
 tests/          unit tests; fixtures/ = planted-bug scripts, saved tracebacks, run_all.py, gate_report.py
-bench/          benchmark: projects/ (4 clean apps), cases.py (36 mutations), run_bench.py, RESULTS.md
+bench/          benchmark: projects/ (6 clean apps), cases.py (54 mutations), run_bench.py, compare.py,
+                RESULTS.md, versions/ (raw results of v4, v5a, v5, v6)
 .claude/skills/traceroot/SKILL.md   tells Claude Code when and how to use TraceRoot
 LOG.md          dated changelog of every plan, change, and result during the build
 ```

@@ -55,7 +55,11 @@ def cmd_next(args) -> int:
         print(NO_MORE)
         return 0
     cause, idx, total = step
-    _show(cause, idx, total, args.json)
+    if args.json:
+        _show(cause, idx, total, True)
+    else:
+        claude_ordered = (store.load() or {}).get("order_by") == "claude"
+        print(pipeline.format_cause(cause, idx, total, both_scores=claude_ordered))
     return 0
 
 

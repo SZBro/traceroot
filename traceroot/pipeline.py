@@ -239,11 +239,14 @@ def _where(cause: dict) -> str:
 
 
 def format_cause(cause: dict, idx: int, total: int, check: dict | None = None,
-                 alt: dict | None = None) -> str:
-    """Compact, agent-friendly output (few tokens). `check`/`alt`: Jev's second opinion (v5)."""
+                 alt: dict | None = None, both_scores: bool = False) -> str:
+    """Compact, agent-friendly output (few tokens). `check`/`alt`: Jev's second opinion (v5).
+    `both_scores`: show Claude's confidence and Jev's p side by side (Claude-ordered lists, `next`)."""
     if check is not None and cause.get("claude_confidence") is not None:
         verdict = "Jev agrees" if check["agree"] else f"Jev prefers #{check['jev_pick_rank']}"
         score = f"claude={cause['claude_confidence']:.2f}, {verdict}"
+    elif both_scores and cause.get("claude_confidence") is not None and cause.get("jev_p") is not None:
+        score = f"claude={cause['claude_confidence']:.2f}, jev={cause['jev_p']:.2f}"
     elif cause.get("jev_p") is not None:
         score = f"p={cause['jev_p']:.2f}"
     elif cause.get("claude_confidence") is not None:
