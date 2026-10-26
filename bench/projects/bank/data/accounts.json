@@ -1,0 +1,7 @@
+[
+  {"number": "CHK-1001", "owner": "Ana Ruiz", "kind": "checking", "balance": "1,250.00", "opened": "2023-02-14"},
+  {"number": "SAV-1002", "owner": "Ana Ruiz", "kind": "savings", "balance": "8,400.00", "opened": "2021-07-01"},
+  {"number": "CHK-1003", "owner": "Ben Okafor", "kind": "checking", "balance": "310.55", "opened": "2025-05-20"},
+  {"number": "SAV-1004", "owner": "Ben Okafor", "kind": "savings", "balance": "2,000.00", "opened": "2024-01-09"},
+  {"number": "CD-1005", "owner": "Chen Wei", "kind": "cd", "balance": "15,000.00", "opened": "2022-11-30"}
+]

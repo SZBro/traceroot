@@ -111,10 +111,10 @@ PROJECTS = {
              "find": 'priority=int(raw.get("priority", 3)),', "replace": 'priority=raw.get("priority", 3),'},
         ],
     },
-    # HELD-OUT #2: written after the v5 changes (21:05); used only for the final v4-vs-v5 comparison.
+    # Held-out for v5 (written 21:05). v6 was designed from its misses, so for v6 it counts as dev.
     "library": {
         "cmd": "python main.py",
-        "held_out": True,
+        "held_out": False,
         "mutations": [
             {"id": "lib-01", "file": "library/catalog.py", "kind": "wrong_type", "distance": "cross_file",
              "find": 'copies=int(row["copies"]),', "replace": 'copies=row["copies"],'},
@@ -137,6 +137,33 @@ PROJECTS = {
              "replace": "if loan.isbn == isbn and loan.member_id == member_id and loan.returned is not None:"},
             {"id": "lib-09", "file": "library/members.py", "kind": "wrong_type", "distance": "same_file",
              "find": 'joined=date.fromisoformat(r["joined"]),', "replace": 'joined=r["joined"],'},
+        ],
+    },
+    # HELD-OUT #3: written at 21:40, BEFORE the v6 changes were implemented; used only for v5-vs-v6.
+    "bank": {
+        "cmd": "python main.py",
+        "held_out": True,
+        "mutations": [
+            {"id": "bank-01", "file": "ledger/money.py", "kind": "wrong_type", "distance": "cross_file",
+             "find": "value = float(cleaned)", "replace": "value = cleaned"},
+            {"id": "bank-02", "file": "ledger/accounts.py", "kind": "key_error", "distance": "same_file",
+             "find": '"savings": {"rate": 0.0400,', "replace": '"saving": {"rate": 0.0400,'},
+            {"id": "bank-03", "file": "ledger/accounts.py", "kind": "none_value", "distance": "cross_file",
+             "find": "return self.accounts.get(number.strip().upper())",
+             "replace": "return self.accounts.get(number.strip().lower())"},
+            {"id": "bank-04", "file": "ledger/statement.py", "kind": "off_by_one", "distance": "crash_line",
+             "find": "months[tx.day.month - 1] += sign * tx.amount", "replace": "months[tx.day.month] += sign * tx.amount"},
+            {"id": "bank-05", "file": "ledger/interest.py", "kind": "missing_import", "distance": "same_file",
+             "find": "from datetime import date\n", "replace": "\n", "crash_ok": True},
+            {"id": "bank-06", "file": "ledger/statement.py", "kind": "typo", "distance": "crash_line",
+             "find": "{fmt(a.balance):>12}{flag}", "replace": "{fmt(a.balance):>12}{flg}"},
+            {"id": "bank-07", "file": "main.py", "kind": "wrong_arguments", "distance": "crash_line",
+             "find": "interest.month_end(bank, days=31)", "replace": "interest.month_end(bank)"},
+            {"id": "bank-08", "file": "ledger/transactions.py", "kind": "none_value", "distance": "same_file",
+             "find": "return [tx for tx in (parse_row(r) for r in rows) if tx]",
+             "replace": "return [parse_row(r) for r in rows]"},
+            {"id": "bank-09", "file": "ledger/accounts.py", "kind": "wrong_type", "distance": "cross_file",
+             "find": 'opened=date.fromisoformat(raw["opened"]),', "replace": 'opened=raw["opened"],'},
         ],
     },
 }

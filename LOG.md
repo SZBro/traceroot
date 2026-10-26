@@ -1050,3 +1050,43 @@ and Claude's 22/30.
 - The Jev responsibility now reads "second opinion / agreement check".
 - New limitations and future work: follow object attributes and methods, a 3-way gate, fuzzy path
   matching.
+
+---
+
+## 2026-10-25 21:32: Plan: v6 improvement round (keep only what helps)
+**Type:** Plan
+
+**Order of work:**
+1. **Write held-out project 6 *before* any code change**, so its bugs can't be shaped to suit the
+   new features.
+2. Implement the two changes behind settings.
+3. A free context check.
+4. v6 on the 45 known cases, reusing the baseline's answers.
+5. v5 vs. v6 on project 6.
+6. Keep or revert each change.
+
+Hard stop for development is 22:45.
+
+| # | Change | Setting | Hypothesis | Evidence |
+|---|---|---|---|---|
+| F | **Follow object methods:** when the code calls `x.m(...)` and exactly **one** project class defines `m`, add that method's definition | `TRACEROOT_FOLLOW_METHODS` (off = v5) | Fixes "object method" misses like `directory.find`, `course.find_student`, `project.get` (lib-04, grade-05, plan-04) for a few hundred extra tokens. It won't fix attribute data flow (`self.books[isbn].copies`). | The 3 held-out complex misses and 2 dev misses go through objects. |
+| P | **Fuzzy paths:** if Claude cites a file that doesn't exist, but exactly **one** project file has that file name, use it | `TRACEROOT_FUZZY_PATHS` (off = v5) | Rescues right answers with a slightly wrong path (shop-01 in v5). Accepts only a unique name match, so the "no invented files" rule mostly holds. | shop-01: Claude named the right cause, but the path was dropped. |
+
+**Known downsides (discussed with the user):** F is a heuristic, since Python types are unknown; common
+method names are skipped when several classes define them. Extra context can distract the model, and
+the change is designed from cases we've already seen (hence the new project). P slightly loosens file
+validation.
+
+---
+
+## 2026-10-25 21:34: Added: held-out project 6 ("bank"), committed before any v6 code
+**Type:** Added
+
+**What:** `bench/projects/bank/`, a ledger app: money parsing, accounts and a `Bank` class, CSV
+transactions with deposits, withdrawals, and transfers, interest and fees, and statements (277 lines).
+It has 9 mutations of the usual kinds. Two of them happen to involve the targeted "object method"
+pattern (bank-03 `bank.lookup`, bank-09 `self.opened` via `days_open`). That's just how ordinary
+object-style code looks, and the mutations weren't picked for the new feature.
+
+**Why commit now:** the git timestamp shows the held-out cases existed before F/P were written.
+library is reclassified as *dev* for v6, because v6 is designed from its misses.

@@ -1,0 +1,13 @@
+day,kind,account,amount,to_account,memo
+# exported from core banking, 2026
+2026-01-05,deposit,CHK-1001,"$2,100.00",,payroll
+2026-01-09,withdraw,CHK-1001,"$84.20",,groceries
+2026-02-01,transfer,CHK-1001,"$500.00",SAV-1002,monthly savings
+2026-02-14,deposit,CHK-1003,"$450.00",,refund
+2026-03-03,withdraw,CHK-1003,"$120.00",,utilities
+2026-04-18,transfer,SAV-1004,"$250.00",CHK-1003,top up
+2026-06-30,deposit,SAV-1002,"$1,000.00",,bonus
+2026-08-12,withdraw,CHK-1001,"$640.00",,rent share
+# mid-year audit marker
+2026-10-02,deposit,CD-1005,"$500.00",,renewal add-on
+2026-12-20,withdraw,CHK-1003,"$75.00",,gifts
