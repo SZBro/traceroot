@@ -17,6 +17,11 @@ def save(result: dict) -> Path:
     return _path()
 
 
+def update(result: dict) -> None:
+    """Rewrite last.json keeping the current cursor (used to cache diagrams)."""
+    _path().write_text(json.dumps(result, indent=2), encoding="utf-8")
+
+
 def load() -> dict | None:
     try:
         return json.loads(_path().read_text(encoding="utf-8"))

@@ -192,6 +192,7 @@ def analyze(text: str, extra_file: str | None = None) -> dict:
         "gate": gate,
         "causes": causes,
         "frames": [{"file": f.file, "line": f.line, "func": f.func} for f in parsed.project_frames],
+        "slices_text": sl,                      # kept for `view` (diagram prompt + code panel)
         "meta": {
             "backend": (claude_meta or {}).get("backend"),
             "claude_tokens": (claude_meta or {}).get("tokens", 0),

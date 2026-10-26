@@ -66,8 +66,8 @@ def _show(cause: dict, idx: int, total: int, as_json: bool) -> str:
 
 
 def cmd_view(args) -> int:
-    print("traceroot: `view` arrives in build step 6")
-    return 0
+    from . import render_html
+    return 0 if render_html.render(args.n, open_browser=not args.no_open) else 1
 
 
 def cmd_stats(args) -> int:
@@ -99,7 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     n.set_defaults(func=cmd_next)
 
     v = sub.add_parser("view", help="open an HTML view with the ranked causes and a diagram")
-    v.add_argument("n", nargs="?", type=int, default=1)
+    v.add_argument("n", nargs="?", type=int, default=1, help="which cause to diagram (default 1)")
+    v.add_argument("--no-open", action="store_true", help="write the file but don't open a browser")
     v.set_defaults(func=cmd_view)
 
     s = sub.add_parser("stats", help="summarize past runs")

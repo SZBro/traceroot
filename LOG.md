@@ -525,3 +525,62 @@ jev_gate       4               0         1020      550
   (b) the root-cause reasoning: in 4/8 cases the fix was in a different function from the crash.
 - The Jev gate path costs about 1k tokens and 0.55 s, versus about 5.4k tokens and 8.7 s for the full
   path. The gate answering 50% of errors roughly halves the average cost.
+
+---
+
+## 2026-10-25 18:22: Added: `traceroot view` (HTML page + Mermaid diagram)
+**Type:** Added
+
+**What:**
+- `traceroot view [n] [--no-open]` writes `.traceroot/view.html` and opens it in the browser. The page has:
+  - the error line, the path taken (Jev gate or full), the gate pick, the ranking source, and
+    model token counts
+  - a Mermaid diagram for cause `n` (default 1), drawn by Claude from a new `DIAGRAM_PROMPT` in
+    `claude_client.py`
+  - every cause ranked, with Jev p (with a bar) and Claude confidence side by side, an
+    agreement tag ("agree", or "Claude #2 · Jev #1"), the explanation, and the fix
+  - a collapsible panel with the exact code slices that were sent to the models
+- Mermaid loads with one `<script>` tag from `cdn.jsdelivr.net` (pinned `mermaid@10.9.1`) plus one
+  init line with `securityLevel: "strict"`. There is no other JS. The CSS uses color tokens with a
+  dark-mode variant.
+- `last.json` now also stores `slices_text`, so the diagram prompt and code panel don't need to re-read files.
+- `store.update()` rewrites `last.json` without resetting the `next` cursor.
+
+**Why:** build step 6, the visual for humans. The agent keeps using the compact text.
+
+---
+
+## 2026-10-25 18:23: Decision: diagram safety, caching, and fallback
+**Type:** Decision
+
+**What:**
+- **Cached:** each diagram is saved in `last.json` under its cause id, so reopening `view` makes no Claude call.
+- **Validated:** `clean_mermaid()` accepts only `flowchart`/`graph` text, strips code fences, and
+  rejects `<script>`, `javascript:`, and `click` directives. It also drops Claude's own `classDef`
+  lines and adds ours (yellow = cause, red = crash).
+- **Fallback:** if Claude fails or returns invalid Mermaid, plain code draws the call path from the
+  traceback frames and attaches the cause node. The page says which kind of diagram it is showing.
+- **Escaped:** all model text is HTML-escaped. A unit test checks that a candidate titled
+  `<script>alert(1)</script>` comes out inert.
+
+**Why:** model output is untrusted input to a page that runs JavaScript, and `view` should still
+work when Claude is down.
+
+---
+
+## 2026-10-25 18:24: Result: view checked in a real browser
+**Type:** Result
+
+**What:**
+- Claude's diagram for the None-cart case shows `checkout` → **`load_cart` line 5 sets items=None**
+  (yellow) → `subtotal` → **`price_items` line 11 iterates None** (red). That's correct, and it shows
+  the cause sitting off the crash path.
+- `view 2` with a forced Claude failure rendered the code-built fallback diagram.
+- `view 9` printed "cause 9 does not exist" (exit code 1).
+- Checked in the desktop app's browser pane, served by a local static server
+  (`.claude/launch.json` → `traceroot-view`). There were no console errors, the page worked in dark
+  mode, and at phone width (375 px) there was no sideways scroll. Centered the diagram after the
+  first look.
+- 5 new unit tests (33 total, all passing): Mermaid validation, the fallback shape, HTML escaping,
+  caching (Claude is called once across two renders), the fallback path, and an out-of-range `n`.
+- Model cost for this step: 2 Claude calls (re-analyze + 1 diagram) and 2 Jev calls.

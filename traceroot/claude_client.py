@@ -43,6 +43,31 @@ CANDIDATE_SCHEMA = """{"candidates": [
 # the api backend). All task instructions live in the user prompt, so this only sets the format.
 SYSTEM_PROMPT = "You are a precise debugging assistant. Reply with only valid JSON, no prose."
 
+DIAGRAM_PROMPT = """Draw a Mermaid flowchart of how this Python error happens, for ONE chosen root cause.
+Show the call path from the entry point to the crash, and where the root cause enters that path.
+
+Rules:
+- Start with exactly: flowchart TD
+- 4 to 12 nodes. Node ids are short letters/digits (A, B, C1). Every label in double quotes, e.g. A["checkout(2)"].
+  No double quotes or square brackets inside labels.
+- Mark the root-cause node with :::cause and the crash node with :::crash, e.g. B["load_cart sets items=None"]:::cause
+- Edge labels are optional, short, and written as A -->|"items=None"| B
+- Use only functions, files and lines that appear below. Do not invent any.
+Return ONLY this JSON: {{"mermaid": "flowchart TD\\n  A[\\"...\\"] --> B[\\"...\\"]"}}
+
+ERROR:
+{error_line}
+
+CALL PATH (outermost first, crash last):
+{frames}
+
+CHOSEN ROOT CAUSE:
+{cause}
+
+CODE SLICES:
+{slices}
+"""
+
 RETRY_SUFFIX ="\n\nYour previous reply was not valid JSON. Return ONLY the JSON object, nothing else."
 
 
@@ -116,6 +141,10 @@ def _call_cli(prompt: str) -> tuple[str, int, float]:
 
 def _call_api(prompt: str) -> tuple[str, int, float]:
     raise ClaudeError("the api backend is not built yet (build step 7); use TRACEROOT_CLAUDE_BACKEND=cli")
+
+
+def diagram_prompt(error_line: str, frames: str, cause: str, slices: str) -> str:
+    return DIAGRAM_PROMPT.format(error_line=error_line, frames=frames, cause=cause, slices=slices)
 
 
 def candidates_prompt(error_line: str, traceback: str, slices: str) -> str:
