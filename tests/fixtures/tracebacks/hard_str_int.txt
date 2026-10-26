@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "tests/fixtures/hard_str_int.py", line 23, in <module>
+    print(order_total(parse_order(ORDER_TEXT)))
+          ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "tests/fixtures/hard_str_int.py", line 19, in order_total
+    return sum(line_total(r) for r in rows)
+  File "tests/fixtures/hard_str_int.py", line 19, in <genexpr>
+    return sum(line_total(r) for r in rows)
+               ~~~~~~~~~~^^^
+  File "tests/fixtures/hard_str_int.py", line 15, in line_total
+    return row["price"] * row["qty"]
+           ~~~~~~~~~~~~~^~~~~~~~~~~~
+TypeError: can't multiply sequence by non-int of type 'float'

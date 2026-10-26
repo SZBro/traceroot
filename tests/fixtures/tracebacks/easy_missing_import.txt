@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "tests/fixtures/easy_missing_import.py", line 6, in <module>
+    print(hypotenuse(3, 4))
+          ~~~~~~~~~~^^^^^^
+  File "tests/fixtures/easy_missing_import.py", line 2, in hypotenuse
+    return math.sqrt(a * a + b * b)
+           ^^^^
+NameError: name 'math' is not defined. Did you forget to import 'math'?

@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "tests/fixtures/medium_keyerror.py", line 19, in <module>
+    main()
+    ~~~~^^
+  File "tests/fixtures/medium_keyerror.py", line 15, in main
+    print(greeting(profile))
+          ~~~~~~~~^^^^^^^^^
+  File "tests/fixtures/medium_keyerror.py", line 9, in greeting
+    return f"Welcome back, {profile['username']}!"
+                            ~~~~~~~^^^^^^^^^^^^
+KeyError: 'username'

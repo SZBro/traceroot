@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "tests/fixtures/easy_wrong_args.py", line 6, in <module>
+    print(make_user("Ada", "ada@example.com"))
+          ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: make_user() missing 1 required positional argument: 'age'

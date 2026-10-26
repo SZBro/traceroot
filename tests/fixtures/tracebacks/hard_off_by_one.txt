@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "tests/fixtures/hard_off_by_one.py", line 21, in <module>
+    print(render(["ant", "bee", "cat", "dog", "eel"]))
+          ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "tests/fixtures/hard_off_by_one.py", line 16, in render
+    out.append(" | ".join(page_labels(items, start, end)))
+                          ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "tests/fixtures/hard_off_by_one.py", line 10, in page_labels
+    return [items[i].upper() for i in range(start, end)]
+            ~~~~~^^^
+IndexError: list index out of range

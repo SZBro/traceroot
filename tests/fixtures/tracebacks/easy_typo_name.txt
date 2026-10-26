@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "tests/fixtures/easy_typo_name.py", line 9, in <module>
+    print(average([90, 85, 77]))
+          ~~~~~~~^^^^^^^^^^^^^^
+  File "tests/fixtures/easy_typo_name.py", line 5, in average
+    return totl / len(scores)
+           ^^^^
+NameError: name 'totl' is not defined. Did you mean: 'total'?

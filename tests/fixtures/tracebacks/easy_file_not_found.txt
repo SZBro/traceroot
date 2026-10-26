@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "tests/fixtures/easy_file_not_found.py", line 10, in <module>
+    print(load_settings())
+          ~~~~~~~~~~~~~^^
+  File "tests/fixtures/easy_file_not_found.py", line 5, in load_settings
+    with open(path) as f:
+         ~~~~^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'settings/config.json'

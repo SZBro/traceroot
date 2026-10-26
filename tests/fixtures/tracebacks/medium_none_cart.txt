@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "tests/fixtures/medium_none_cart.py", line 25, in <module>
+    print(checkout(2))
+          ~~~~~~~~^^^
+  File "tests/fixtures/medium_none_cart.py", line 20, in checkout
+    return round(subtotal(cart) * 1.1, 2)
+                 ~~~~~~~~^^^^^^
+  File "tests/fixtures/medium_none_cart.py", line 15, in subtotal
+    return sum(price_items(cart["items"]))
+               ~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "tests/fixtures/medium_none_cart.py", line 11, in price_items
+    return [prices[i] for i in items]
+                               ^^^^^
+TypeError: 'NoneType' object is not iterable
