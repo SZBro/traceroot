@@ -84,10 +84,10 @@ PROJECTS = {
              "replace": "if days_late <= GRACE_DAYS:\n        return"},
         ],
     },
-    # HELD-OUT: written after the tool was frozen (20:31); never used for tuning.
+    # Held-out for v4 (written after the 20:31 freeze). v5 was designed from results that included it, so for v5 it counts as dev.
     "planner": {
         "cmd": "python main.py",
-        "held_out": True,
+        "held_out": False,
         "mutations": [
             {"id": "plan-01", "file": "planner/loading.py", "kind": "key_error", "distance": "same_file",
              "find": 'UNIT_DAYS = {"d": 1, "w": 5}', "replace": 'UNIT_DAYS = {"d": 1, "wk": 5}'},
@@ -109,6 +109,34 @@ PROJECTS = {
              "find": "    return earliest, finish\n", "replace": "    earliest, finish\n"},
             {"id": "plan-09", "file": "planner/loading.py", "kind": "wrong_type", "distance": "cross_file",
              "find": 'priority=int(raw.get("priority", 3)),', "replace": 'priority=raw.get("priority", 3),'},
+        ],
+    },
+    # HELD-OUT #2: written after the v5 changes (21:05); used only for the final v4-vs-v5 comparison.
+    "library": {
+        "cmd": "python main.py",
+        "held_out": True,
+        "mutations": [
+            {"id": "lib-01", "file": "library/catalog.py", "kind": "wrong_type", "distance": "cross_file",
+             "find": 'copies=int(row["copies"]),', "replace": 'copies=row["copies"],'},
+            {"id": "lib-02", "file": "library/members.py", "kind": "key_error", "distance": "same_file",
+             "find": '"student": 3,', "replace": '"students": 3,'},
+            {"id": "lib-03", "file": "library/catalog.py", "kind": "off_by_one", "distance": "same_file",
+             "find": "for i in range(len(words) - 1):", "replace": "for i in range(len(words)):"},
+            {"id": "lib-04", "file": "library/members.py", "kind": "none_value", "distance": "cross_file",
+             "find": "return self._by_id.get(member_id.strip().upper())",
+             "replace": "return self._by_id.get(member_id.strip().lower())"},
+            {"id": "lib-05", "file": "library/loans.py", "kind": "missing_import", "distance": "same_file",
+             "find": "from datetime import date, timedelta", "replace": "from datetime import date", "crash_ok": True},
+            {"id": "lib-06", "file": "library/report.py", "kind": "typo", "distance": "crash_line",
+             "find": 'return f"${x:,.2f}"', "replace": 'return f"${amt:,.2f}"'},
+            {"id": "lib-07", "file": "main.py", "kind": "wrong_arguments", "distance": "crash_line",
+             "find": 'ledger.checkout(row["isbn"], row["member_id"], day)',
+             "replace": 'ledger.checkout(row["isbn"], row["member_id"])'},
+            {"id": "lib-08", "file": "library/loans.py", "kind": "none_value", "distance": "same_file",
+             "find": "if loan.isbn == isbn and loan.member_id == member_id and loan.returned is None:",
+             "replace": "if loan.isbn == isbn and loan.member_id == member_id and loan.returned is not None:"},
+            {"id": "lib-09", "file": "library/members.py", "kind": "wrong_type", "distance": "same_file",
+             "find": 'joined=date.fromisoformat(r["joined"]),', "replace": 'joined=r["joined"],'},
         ],
     },
 }

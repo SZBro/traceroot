@@ -888,3 +888,165 @@ lower accuracy and higher model spend.
 - Added 7 unit tests for the benchmark's scoring and case building (`tests/test_bench.py`).
   41 tests pass in total.
 - Rewrote the README Results section around these numbers, with the weak spots under Limitations.
+
+---
+
+## 2026-10-25 21:04: Plan: v5 improvement experiment (keep only what helps)
+**Type:** Plan, Decision
+
+**Rule:** every change goes behind a setting, so v4 can be reproduced exactly. v4's results are
+saved in `bench/versions/v4_results.jsonl` and `v4_RESULTS.md`. A change is **kept only if it doesn't
+make the numbers worse**; otherwise the setting is switched back to its v4 value and the result is
+logged anyway. Projects 1–4 (36 cases) are now all "seen", so a **new held-out project 5** is written
+for the final comparison, and both v4 and v5 run on it.
+
+**Changes and hypotheses (written before testing):**
+
+| # | Change | Setting (v4 → v5) | Hypothesis | Evidence from v4 |
+|---|---|---|---|---|
+| A | Widen the Jev gate | `GATE_THRESHOLD` 0.8 → **0.65** | +1 case on the cheap path, precision stays 100% | shop-08 (missing arg, on the crash line) was gated `wrong_arguments` at 0.66; the only other non-`other` gate pick on the full path is logs-04 at 0.51, which would be wrong, so the threshold must stay above it. Every other full-path case was truly complex, so the gate is near its ceiling. |
+| C | Jev from re-ranker to **agreement checker** | `TRACEROOT_RANK_BY` jev → **claude** | full-path top-1 rises from 19/25 to ~21/25. When Jev's pick differs, show it as an `alt:` line, so the agent sees 2 causes for ~20 more tokens | Claude's own order beat Jev's order (21/25 vs. 19/25) |
+| D | Leaner Jev context | `TRACEROOT_JEV_CONTEXT` all → **windows** | the gate and scorer get the traceback plus crash windows only, not the one-hop definitions, cutting ~1–2k Jev tokens per complex case | Jev was ~40% of full-path tokens (both calls carried all definitions) |
+
+**Metrics:** the same as v4 (top-1, top-3, model tokens, agent context), plus "hit shown up front"
+(the #1 cause or the `alt:` line).
+
+---
+
+## 2026-10-25 21:06: Added: v5 settings, benchmark version switch, held-out project 5 ("library")
+**Type:** Added
+
+**What:**
+- **New settings in `config.py`, with v5 defaults:**
+  - `GATE_THRESHOLD` = 0.65
+  - `TRACEROOT_RANK_BY` = `claude` (`jev` reproduces v4)
+  - `TRACEROOT_JEV_CONTEXT` = `windows` (`all` reproduces v4)
+- **Full-path output:**
+  - Ranked by Claude.
+  - `pipeline.agreement()` records whether Jev's top pick matches cause #1.
+  - The compact output now says `Jev agrees` or `Jev prefers #k`, plus an `alt (Jev's pick, #k): ...`
+    line when they disagree.
+- **`bench/run_bench.py --config v4|v5`:** sets these settings explicitly for each run. The local
+  `.env` had `GATE_THRESHOLD=0.8`, which would otherwise have silently overridden the new default.
+  - `--out` writes to a separate results file.
+  - `--baseline-from` reuses earlier baseline answers, since the baseline didn't change, which saves
+    the Claude calls.
+  - New metric: `shown_hit`, the right cause shown up front, either as #1 or on the `alt:` line.
+- **`.env.example`:** now 0.65. **The user's own `.env` still says 0.8 and should be updated by hand.**
+- **4 new unit tests** for Claude ranking, the agreement check, and the `alt:` line (45 total, all pass).
+- **`bench/projects/library/`:** a lending system (catalog, ISBN search index, member tiers, loans,
+  fines, event replay; 291 lines) with 9 mutations, written *after* the v5 changes. It's the fresh held-out
+  set, and it deliberately includes one known-weak "object method" case (lib-04).
+
+---
+
+## 2026-10-25 21:10: Result: v5a on the 36 known cases, change A reverted
+**Type:** Result, Decision, Removed
+
+**What:** v5a = A + C + D (threshold 0.65, Claude ranking, lean Jev context), compared with v4 on the
+same 36 cases (`bench/compare.py`):
+
+| Metric | v4 | v5a |
+|---|---|---|
+| Top-1 | 30/36 | 30/36 |
+| Top-3 | 33/36 | 32/36 |
+| Right cause shown up front (#1 or `alt:`) | 30 | 31 |
+| Gate answered / correct | 11 / 11 | 12 / **11** |
+| Avg model tokens | 8,595 | **6,979 (−19%)** |
+| Gate-path tokens | 2,966 | **2,018** |
+| Full-path tokens (Jev part) | 11,072 (5,457) | **9,460 (3,894)** |
+
+**Per change:**
+- **A (threshold 0.65): REVERTED.** It let **logs-04 through as a wrong quick answer**. With the
+  leaner context from D, Jev's confidence that the KeyError is local rose from 0.51 to 0.70: it no
+  longer sees the `THRESHOLDS` definition in `settings.py`, so the error looks local. The gate's whole
+  value is being right when it answers, and 11/12 breaks that. shop-08, the case A was meant to add,
+  fell to 0.62 and wasn't added anyway. **Lesson:** A and D interact, so changes have to be judged
+  together, not one at a time.
+- **C (Claude ranking + Jev agreement): KEPT.** logs-08 went from rank 2 to rank 1 and shop-04 from
+  rank 3 to rank 2, with no full-path losses.
+- **D (lean Jev context): KEPT, conditionally.** It cuts ~1.6k tokens per full-path case and ~0.9k per
+  gate case. At the 0.8 threshold, logs-04 (0.70) goes back to the Claude path. grade-08 (0.77, was
+  0.83) also moves to the Claude path: still expected to be correct, just more expensive.
+
+**Next:** final v5 = 0.8 + C + D. Rerun the 36 known cases for clean numbers (not a simulation),
+then run v4 vs. v5 on the fresh held-out project 5. `.env.example` is back to 0.8, so the user's
+`.env` needs no change.
+
+---
+
+## 2026-10-25 21:16: Result: final v5 (threshold 0.8 + C + D) on the 36 known cases
+**Type:** Result
+
+| Metric | v4 | **v5** | Baseline |
+|---|---|---|---|
+| Top-1 | 30/36 | **31/36** | 32/36 |
+| Gate answered / correct | 11 / 11 | 11 / **11** | – |
+| Avg model tokens | 8,595 | **7,255 (−16%)** | 8,807 |
+| Gate path / full path | 2,966 / 11,072 | **2,007 / 9,565** | – |
+| Jev tokens on full path | 5,457 | **3,900** | – |
+
+- **Changed for the better:** shop-04 (rank 3 → 1), logs-02 (2 → 1), logs-08 (2 → 1).
+- **Changed for the worse:**
+  - **shop-01:** a hit in v4, a miss in v5. Claude gave the right cause ("CSV price never converted to
+    float in load_catalog"), but with no valid file, so the validator nulled the path. It isn't caused by
+    a v5 change: Claude's prompt and context are identical, so it's model variance. Logged as a
+    limitation (strict file matching).
+  - **plan-01:** rank 1 → 3.
+- The earlier test collision on `bench/out/work/shop-01` did *not* affect this case: the run had no
+  errors, and the causes were complete. `tests/test_bench.py` now builds into a temporary folder, so
+  this can't happen again.
+
+---
+
+## 2026-10-25 21:19: Result: held-out project 5 ("library"), v4 vs. v5
+**Type:** Result
+
+| 9 fresh cases | v4 | **v5** | Baseline |
+|---|---|---|---|
+| Top-1 | 5/9 | **6/9** | **9/9** |
+| Simple (gate) | 4/4, 2,876 tok | **4/4, 2,052 tok** | 4/4, ~7,950 tok |
+| Complex (full path) | 1/5, 11,068 tok | **2/5, 10,405 tok** | 5/5, ~8,450 tok |
+| Avg model tokens | 7,427 | **6,693** | 8,327 |
+
+**Honest reading:**
+- v5 beats v4 on the fresh set (lib-02 went from rank 2 to rank 1, and tokens fell 10%).
+- But **TraceRoot is clearly behind the baseline on complex errors here (2/5 vs. 5/5)**. All three
+  misses involve data flowing through *object attributes or methods*: `self.books[isbn].copies`
+  (lib-01), `self.members.find(...)` (lib-04), and `self.joined` in a method 24 lines from the parser
+  (lib-09). The definition lookup follows names, not attributes. The dev projects had fewer of these.
+- On simple errors TraceRoot is excellent: 4/4 at about a quarter of the baseline's tokens.
+
+---
+
+## 2026-10-25 21:22: Decision: ship v5, final numbers, README updated
+**Type:** Decision, Changed
+
+**Decision:** v5 (threshold 0.8, Claude ranking with a Jev agreement check, lean Jev context) is
+**kept as the default**. It's better than or equal to v4 on every aggregate metric on both the known
+and held-out cases. Change A stays reverted.
+
+**Final numbers (v5, all 45 cases):**
+
+| Errors | Cases | TraceRoot top-1 | Baseline top-1 | TraceRoot tokens | Baseline tokens | Agent context |
+|---|---|---|---|---|---|---|
+| Simple (gate) | 15 | **15/15** | 15/15 | **2,019 (−76%)** | 8,309 | **2,051 → 51 (−98%)** |
+| Complex | 30 | 22/30 | 26/30 | 9,705 (+9%) | 8,912 | 1,736 → 65 (−96%) |
+| All | 45 | 37/45 (82%) | 41/45 (91%) | **7,143 (−18%)** | 8,711 | 1,841 → 61 (−97%) |
+
+v4 on the same 45 cases: 35/45 at 8,361 tokens. On v5's complex cases, Jev's order would get 18/30
+and Claude's 22/30.
+
+**Bookkeeping:**
+- `bench/versions/` holds the raw v4, v5a, and v5 results.
+- `bench/out/results.jsonl` and `bench/RESULTS.md` are now v5.
+- planner is reclassified as *dev* for v5, because v5 was designed from results that included it.
+- `bench/compare.py` compares any two versions.
+
+**README:**
+- The headline is now "simple errors: −76% model tokens, −98% agent context, same accuracy".
+- Complex errors are described honestly (73% vs. 87%, and 2/5 on the held-out set).
+- The v4 → v5 experiment table includes the reverted change.
+- The Jev responsibility now reads "second opinion / agreement check".
+- New limitations and future work: follow object attributes and methods, a 3-way gate, fuzzy path
+  matching.

@@ -18,11 +18,11 @@ The crash in that example happens in `price_items` (line 11), three calls away. 
 at `load_cart` (line 5), where the bad value is created. That function isn't in the traceback at all.
 
 **What it's for:** cheaper, cleaner debugging, especially for **simple, common errors**. On a
-36-bug benchmark ([Results](#results)):
-- **Simple errors:** the Jev gate answers alone. That's **65% fewer model tokens** than giving
-  Claude every file, the agent reads **52 tokens instead of ~2,100**, and accuracy is the same (11/11).
-- **Complex errors:** the agent's context is still **~97% smaller**, at 76% vs. 84% top-1 accuracy
-  and ~23% more model tokens than the full-file baseline.
+45-bug benchmark ([Results](#results)):
+- **Simple errors:** the Jev gate answers alone. That's **76% fewer model tokens** than giving
+  Claude every file, the agent reads **51 tokens instead of ~2,050**, and accuracy is the same (15/15).
+- **Complex errors:** the agent's context is still **~96% smaller**, but accuracy is lower than the
+  full-file baseline (73% vs. 87%; 2/5 on the held-out project), at ~9% more model tokens.
 
 Commands: `traceroot` or the short alias `trt` (not `tr`, which is a standard Unix command).
 
@@ -60,8 +60,10 @@ everything the models return.
    `wrong_type`, `none_value`, `wrong_arguments`, `key_or_index_error`, `file_not_found`,
    `syntax_error`, `other_or_complex`). If the top category has p ≥ `GATE_THRESHOLD` (0.8) and isn't
    `other_or_complex`, TraceRoot answers right away and **Claude is never called**.
-2. **Scorer:** on the full path, Jev independently scores Claude's candidates (one probability each).
-   **The final order is Jev's probability.** Claude's own ranking is kept beside it for comparison.
+2. **Second opinion:** on the full path, Jev independently scores Claude's candidates (one
+   probability each) and decides whether it **agrees** with Claude's #1. If it doesn't, Jev's pick is
+   shown to the agent as an `alt:` line. Since v5 the order is Claude's: the benchmark showed Jev's
+   order was worse (18/30 vs. 22/30). Setting `TRACEROOT_RANK_BY=jev` restores v4 behavior.
 
 ### Claude (`claude-haiku-5-5` via `claude -p`): **generates** text
 1. **Candidate causes:** 3–6 root-cause hypotheses as strict JSON (title, explanation, category,
@@ -169,23 +171,24 @@ can't use tools or read files, and it sees only what TraceRoot sends.
 
 ### Headline
 
-**For simple, common errors, TraceRoot cuts both the model tokens spent and the error text dumped
-into the agent's context, with no loss in accuracy.** For complex errors it still keeps the agent's
-context ~97% smaller, but it spends *more* model tokens than just handing Claude every file, and it's
-a little less accurate.
+**For simple, common errors, TraceRoot cuts model tokens by ~76% and the error text dumped into the
+agent's context by ~98%, with the same accuracy as giving Claude every file (15/15).** For complex
+errors, it still keeps the agent's context ~96% smaller, but it's less accurate than the
+full-file baseline (73% vs. 87%) and spends ~9% more model tokens.
 
-That distinction matters because the two token pools are different:
+The two token pools are different:
 - **The agent's context** is the expensive model doing your work. Everything it reads stays there
   and is re-sent on every later turn.
 - **TraceRoot's side calls** (Haiku and Jev) are cheap, one-shot, and thrown away after the answer.
 
-### Benchmark: 36 planted bugs in 4 multi-file projects
+### Benchmark: 45 planted bugs in 5 multi-file projects
 
-`bench/` holds 4 clean mini-projects:
+`bench/` holds 5 clean mini-projects:
 - shop: 170 lines
 - logs: 357 lines
 - gradebook: 401 lines
-- planner: 315 lines, **held out**
+- planner: 315 lines
+- library: 291 lines, **held out**
 
 Each case applies **one known mutation** (a dropped `int()`, a renamed dict key, an off-by-one, a
 `None` return, a removed import, a typo, a missing argument, and so on). The mutated line is the
@@ -196,47 +199,67 @@ ground truth, stored outside the project so no model ever sees it. Each case run
   project file in full**, with no gate and no Jev. That's "just ask Claude with everything".
 
 A *hit* is the right file and a line within ±1. Regenerate everything with `python bench/run_bench.py`.
-The full per-case table is in [`bench/RESULTS.md`](bench/RESULTS.md).
+Per-case tables are in [`bench/RESULTS.md`](bench/RESULTS.md), and every version's raw results are in
+`bench/versions/`.
 
-**Simple vs. complex errors** (simple = the Jev gate answered alone):
+**Final version (v5), simple vs. complex errors** (simple = the Jev gate answered alone):
 
 | Errors | Cases | TraceRoot top-1 | Baseline top-1 | TraceRoot model tokens | Baseline model tokens | Model tokens | Agent context: baseline → TraceRoot |
 |---|---|---|---|---|---|---|---|
-| **Simple (gate)** | 11 | **11/11 (100%)** | 11/11 (100%) | **2,966** | 8,412 | **−65%** | **2,100 → 52 (−98%)** |
-| Complex (Claude + Jev) | 25 | 19/25 (76%) | 21/25 (84%) | 11,072 | 8,981 | +23% | 1,735 → 59 (−97%) |
-| All | 36 | 30/36 (83%) | 32/36 (89%) | 8,595 | 8,807 | −2% | 1,846 → 57 (−97%) |
+| **Simple (gate)** | 15 | **15/15 (100%)** | 15/15 (100%) | **2,019** | 8,309 | **−76%** | **2,051 → 51 (−98%)** |
+| Complex (Claude + Jev) | 30 | 22/30 (73%) | 26/30 (87%) | 9,705 | 8,912 | +9% | 1,736 → 65 (−96%) |
+| All | 45 | 37/45 (82%) | 41/45 (91%) | **7,143** | 8,711 | **−18%** | 1,841 → 61 (−97%) |
 
-**Development set vs. held-out set:** projects 1–3 were used to *improve* TraceRoot (see LOG.md).
-The planner project was written **after the tool was frozen** and never used for tuning.
+**Development vs. held-out:** projects 1–4 were used to improve TraceRoot (v1 → v5; see LOG.md). The
+library project was written **after the last change** and is the only fair test of v5:
 
-| Set | TraceRoot top-1 | TraceRoot top-3 | Baseline top-1 | TraceRoot tokens | Baseline tokens |
-|---|---|---|---|---|---|
-| Development (27, tuned on) | 22/27 (81%) | 25/27 (93%) | 24/27 (89%) | 8,316 | 8,870 |
-| **Held-out (9)** | **8/9 (89%)** | 8/9 (89%) | **8/9 (89%)** | 9,431 | 8,617 |
+| Set | TraceRoot v5 top-1 | Baseline top-1 | TraceRoot tokens | Baseline tokens |
+|---|---|---|---|---|
+| Development (36, tuned on) | 31/36 (86%) | 32/36 (89%) | 7,255 | 8,807 |
+| **Held-out (9)** | **6/9 (67%)**: simple 4/4, complex 2/5 | **9/9** | 6,693 | 8,327 |
+
+The held-out set shows the real weak spot. All 3 complex misses involve data flowing through
+**object attributes or methods** (`self.books[isbn].copies`, `directory.find(...)`,
+`self.joined`), which the definition lookup doesn't follow. The baseline sees every file, so it
+doesn't have that problem.
 
 **Other numbers:**
-- **Jev gate:** answered 11/36 cases (31%) alone, and **all 11 were right** (100% precision). The
-  gate path averages ~3.0k model tokens and ~1 s, vs. ~11.1k tokens and ~10 s for the full path.
-- **By distance from the crash:**
+- **Jev gate:** answered 15/45 (33%) alone, and **all 15 were right**. It costs ~2.0k model tokens and
+  ~1 s, vs. ~9.7k tokens and ~10 s on the full path.
+- **Jev as a re-ranker vs. as a second opinion:** on the 30 complex cases, ordering by Jev's score
+  would get 18/30 top-1, while Claude's own order (what v5 ships) gets 22/30. So v5 uses Jev as an
+  **agreement check**. The output says "Jev agrees" or "Jev prefers #k", and shows Jev's pick on an
+  `alt:` line when the two disagree.
 
-  | Distance | TraceRoot top-1 | Baseline top-1 |
-  |---|---|---|
-  | Bug on the crash line (9 cases) | 9/9 | 9/9 |
-  | Same file, elsewhere (14 cases) | 12/14 | 12/14 |
-  | Different file (13 cases) | 9/13 | 11/13 |
+### Improvement experiment: v4 → v5
 
-- **Does Jev's re-ranking help? No.** On the 25 complex cases, ordering TraceRoot's own candidates by
-  Claude's rank would give 21/25 top-1, while Jev's order (what ships) gives 19/25. The gate is where
-  Jev pays off; as a scorer it slightly hurts.
+Three changes, each behind a setting and kept only if the numbers didn't get worse (LOG.md, 21:04–21:20):
 
-### How the benchmark changed TraceRoot
+| Change | Result | Kept? |
+|---|---|---|
+| A. Wider gate (threshold 0.8 → 0.65) | let **one wrong quick answer** through (gate precision 11/12) | **No, reverted** |
+| C. Rank by Claude, Jev as agreement check | 3 cases moved up to rank 1; Jev-only order is worse | **Yes** |
+| D. Jev sees only crash windows, not extra definitions | −0.9k tokens on simple errors, −1.6k on complex | **Yes** |
+
+A and D *interacted*: the leaner context made Jev more confident on a case that only looks local,
+and the lower threshold let it through. That's why they had to be judged together.
+
+| All 45 cases | v4 | **v5** | Baseline |
+|---|---|---|---|
+| Top-1 | 35/45 | **37/45** | 41/45 |
+| Gate answers correct | 15/15 | **15/15** | – |
+| Avg model tokens | 8,361 | **7,143 (−15%)** | 8,711 |
+| Simple-error tokens | ~2,950 | **~2,020** | ~8,300 |
+| Held-out library top-1 | 5/9 | **6/9** | 9/9 |
+
+### How the benchmark changed TraceRoot (v1 → v4)
 
 The first version scored **4/9** on the shop project, against the baseline's 9/9. The bug was usually
 in code that had *already returned*, such as `load_catalog` parsing a price, so it was never on the
 call stack, and TraceRoot only read files in the traceback. The fix is plain code:
 **one-hop definition lookup** (Python's `ast`). It adds just the definitions of project functions,
 classes, and constants that the failing code uses, plus a small second hop. With it, shop went to 8/9
-at about 1k tokens of context. Each iteration (v1 → v4) is recorded in LOG.md.
+at about 1k tokens of context.
 
 ### Original 8 test scripts
 
@@ -244,24 +267,27 @@ The single-file scripts in `tests/fixtures/` (`python tests/fixtures/run_all.py`
 they're tiny and the cause is always inside the code window. The benchmark above is the meaningful
 measure.
 
-**Unit tests:** `python -m unittest discover tests` runs 41 tests, none of which call a model. They
-cover parsing, safety rules, definition lookup, validation, ranking, the gate decision, stats, the
-HTML view, and the benchmark's own scoring.
+**Unit tests:** `python -m unittest discover tests` runs 45 tests, none of which call a model. They
+cover parsing, safety rules, definition lookup, validation, ranking and the agreement check, the gate
+decision, stats, the HTML view, and the benchmark's own scoring.
 
 ## Limitations
 
-- **Complex errors cost more model tokens than "send everything"** on projects of this size
-  (~11k vs. ~9k), mostly because Jev's two calls each carry the code. The saving there is in the
-  agent's context, not in total spend.
-- **Jev's re-ranking slightly hurts** (19/25 vs. 21/25 with Claude's own order). Ranking by Claude,
-  or sending Jev less code, are the obvious next experiments.
+- **Complex errors are TraceRoot's weak spot:** 73% top-1 vs. 87% for the full-file baseline, and
+  only **2/5 on the held-out project**, at ~9% more model tokens (~9.7k vs. ~8.9k). The saving
+  there is in the agent's context (−96%), not in accuracy or total spend. For hard bugs, reading the
+  files (or `--file`) is still the safer option.
 - **The models only see the traceback and the selected code**: the last 3 project frames ±20 lines,
-  plus one-hop definitions. Causes reached only through object methods (`course.find_student`) or
-  through more than two hops can be missed (4 of the 6 TraceRoot misses). `--file` helps.
+  plus one-hop definitions. Causes reached through **object attributes or methods**
+  (`self.books[isbn].copies`, `directory.find(...)`) or through more than two hops are missed. That
+  accounts for most of TraceRoot's misses, including all 3 complex misses on the held-out set.
+- **Strict file matching:** in one case (shop-01, v5) Claude named the right cause, but its file path
+  didn't validate and was dropped, so the case counts as a miss.
 - **Benchmark caveats:**
-  - It's 36 cases, each run once, and model answers vary between runs.
+  - It's 45 cases, each run once, and model answers vary between runs (shop-01 flipped from hit to
+    miss between v4 and v5 with no related change).
   - The projects and mutations were written by the same model family the tool uses.
-  - Only the held-out project (9 cases) was never tuned on.
+  - Only the 9 library cases were never tuned on.
 - **Text token counts are estimates** (`len(text) // 4`). Claude and Jev token counts come from
   their APIs.
 - **Python tracebacks only** get source context. Other errors are still analyzed, but from the error
@@ -272,6 +298,11 @@ HTML view, and the benchmark's own scoring.
 
 - The **API backend** (`TRACEROOT_CLAUDE_BACKEND=api`) using the `anthropic` SDK. The stub and a
   note on what to implement are in `claude_client._call_api`. Contributions are welcome.
+- **Follow object attributes and methods** in the definition lookup, e.g. resolve `directory.find`
+  when exactly one project class defines `find`. This targets most of the remaining misses.
+- **3-way gate:** add a second Jev question in the same request ("is the cause probably in another
+  file?") and switch to full-file mode for those cases, where the baseline wins.
+- Fuzzy path matching when Claude's cited file is close to a real project file (the shop-01 case).
 - An MCP server, so agents can call TraceRoot as a tool instead of a shell command
 - An auto-run hook that triggers on failed commands
 - Parsing non-Python tracebacks (JavaScript, Java, ...)

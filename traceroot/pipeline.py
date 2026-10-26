@@ -39,9 +39,9 @@ def traceback_text(parsed: ParsedTrace) -> str:
     return raw if len(raw) <= MAX_TRACEBACK_CHARS else "...(trimmed)...\n" + raw[-MAX_TRACEBACK_CHARS:]
 
 
-def slices_text(parsed: ParsedTrace) -> str:
+def slices_text(parsed: ParsedTrace, include_defs: bool = True) -> str:
     parts = [f"--- {s.file} (lines {s.start}-{s.end}{'; ' + s.label if s.label else ''}) ---\n{s.text}"
-             for s in parsed.slices]
+             for s in parsed.slices if include_defs or not s.label]
     text = "\n\n".join(parts) or "(no project source available)"
     return text if len(text) <= MAX_SLICE_CHARS else text[:MAX_SLICE_CHARS] + "\n...(trimmed)"
 
@@ -123,9 +123,9 @@ def fallback_answer(parsed: ParsedTrace, why: str) -> dict:
             "claude_rank": None, "claude_confidence": None, "jev_p": None}
 
 
-def rank(causes: list[dict]) -> tuple[list[dict], str]:
-    """Final order = Jev probability when every cause has one, else Claude's rank."""
-    if causes and all(c["jev_p"] is not None for c in causes):
+def rank(causes: list[dict], by: str = "jev") -> tuple[list[dict], str]:
+    """Final order: by="jev" -> Jev probability when every cause has one (v4); otherwise Claude's rank."""
+    if by == "jev" and causes and all(c["jev_p"] is not None for c in causes):
         causes.sort(key=lambda c: -c["jev_p"])
         order_by = "jev"
     else:
@@ -135,6 +135,16 @@ def rank(causes: list[dict]) -> tuple[list[dict], str]:
     for i, c in enumerate(causes, 1):
         c["final_rank"] = i
     return causes, order_by
+
+
+def agreement(causes: list[dict]) -> dict | None:
+    """Jev as a second opinion: does Jev's most likely cause match the cause ranked first?"""
+    scored = [c for c in causes if c.get("jev_p") is not None]
+    if not causes or len(scored) != len(causes):
+        return None
+    pick = max(scored, key=lambda c: c["jev_p"])
+    return {"agree": pick["id"] == causes[0]["id"], "jev_pick": pick["id"],
+            "jev_pick_rank": causes.index(pick) + 1}
 
 
 # ---------- main entry ----------
@@ -153,10 +163,11 @@ def analyze(text: str, extra_file: str | None = None) -> dict:
         notice("no Python traceback found; analyzing the raw error text without source context")
 
     tb, sl = traceback_text(parsed), slices_text(parsed)
-    claude_meta, order_by = None, None
+    sl_jev = sl if config.JEV_CONTEXT == "all" else slices_text(parsed, include_defs=False)
+    claude_meta, order_by, jev_check = None, None, None
     jev_start = jev_client.last_usage["input_tokens"] + jev_client.last_usage["output_tokens"]
 
-    gate = jev_client.gate(tb, sl)
+    gate = jev_client.gate(tb, sl_jev)
     confident = bool(gate) and gate["category"] != "other_or_complex" \
         and gate["probability"] >= config.GATE_THRESHOLD
     if confident:
@@ -176,11 +187,12 @@ def analyze(text: str, extra_file: str | None = None) -> dict:
             source, causes = "fallback", [fallback_answer(parsed, str(e))]
 
         if source == "full":
-            scores = jev_client.score(tb, sl, causes)
+            scores = jev_client.score(tb, sl_jev, causes)
             if scores and len(scores) == len(causes):
                 for c, p in zip(causes, scores):
                     c["jev_p"] = _prob(p)
-        causes, order_by = rank(causes)
+        causes, order_by = rank(causes, config.RANK_BY)
+        jev_check = agreement(causes)
 
     referenced = {s.file for s in parsed.slices}
     raw_text = parsed.raw + "".join(_read(root / f) for f in referenced)
@@ -191,6 +203,7 @@ def analyze(text: str, extra_file: str | None = None) -> dict:
         "source": source,                       # jev_gate | full | fallback
         "order_by": order_by,                   # jev | claude | jev_gate
         "gate": gate,
+        "jev_check": jev_check,                 # {agree, jev_pick} when Jev scored the candidates
         "causes": causes,
         "frames": [{"file": f.file, "line": f.line, "func": f.func} for f in parsed.project_frames],
         "slices_text": sl,                      # kept for `view` (diagram prompt + code panel)
@@ -217,18 +230,37 @@ def _read(p: Path) -> str:
 
 # ---------- output ----------
 
-def format_cause(cause: dict, idx: int, total: int) -> str:
-    """Compact, agent-friendly output (few tokens)."""
-    if cause.get("jev_p") is not None:
+def _where(cause: dict) -> str:
+    if cause.get("file") and cause.get("line"):
+        return f" {cause['file']}:{cause['line']}"
+    return f" {cause['file']}" if cause.get("file") else ""
+
+
+def format_cause(cause: dict, idx: int, total: int, check: dict | None = None,
+                 alt: dict | None = None) -> str:
+    """Compact, agent-friendly output (few tokens). `check`/`alt`: Jev's second opinion (v5)."""
+    if check is not None and cause.get("claude_confidence") is not None:
+        verdict = "Jev agrees" if check["agree"] else f"Jev prefers #{check['jev_pick_rank']}"
+        score = f"claude={cause['claude_confidence']:.2f}, {verdict}"
+    elif cause.get("jev_p") is not None:
         score = f"p={cause['jev_p']:.2f}"
     elif cause.get("claude_confidence") is not None:
         score = f"claude={cause['claude_confidence']:.2f}"
     else:
         score = "unscored"
-    where = f" {cause['file']}:{cause['line']}" if cause.get("file") and cause.get("line") else \
-        f" {cause['file']}" if cause.get("file") else ""
-    lines = [f"[{idx + 1}/{total}] {cause['category']} ({score}){where}",
+    lines = [f"[{idx + 1}/{total}] {cause['category']} ({score}){_where(cause)}",
              f"cause: {cause['title']}",
              f"fix: {cause['fix_hint'] or '(none given)'}"]
+    if alt is not None:
+        lines.append(f"alt (Jev's pick, #{check['jev_pick_rank']}): {alt['title']}{_where(alt)}")
     lines.append("more: `traceroot next`" if idx + 1 < total else "more: none (last candidate)")
     return "\n".join(lines)
+
+
+def format_top(result: dict) -> str:
+    """The first answer `analyze` prints: cause #1, plus Jev's pick when it disagrees (rank-by-claude)."""
+    causes, check = result["causes"], result.get("jev_check")
+    if result.get("order_by") == "claude" and check:
+        alt = None if check["agree"] else next(c for c in causes if c["id"] == check["jev_pick"])
+        return format_cause(causes[0], 0, len(causes), check, alt)
+    return format_cause(causes[0], 0, len(causes))

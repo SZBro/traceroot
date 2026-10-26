@@ -34,6 +34,14 @@ RESULTS = OUT / "results.jsonl"
 SUMMARY = BENCH / "RESULTS.md"
 TRACEROOT_EXE = Path(sys.executable).parent / ("traceroot.exe" if os.name == "nt" else "traceroot")
 LINE_TOLERANCE = 1
+
+# TraceRoot settings per version, set explicitly so a local .env can't change what is measured.
+CONFIGS = {
+    "v4": {"GATE_THRESHOLD": "0.8", "TRACEROOT_RANK_BY": "jev", "TRACEROOT_JEV_CONTEXT": "all"},
+    "v5a": {"GATE_THRESHOLD": "0.65", "TRACEROOT_RANK_BY": "claude", "TRACEROOT_JEV_CONTEXT": "windows"},
+    "v5": {"GATE_THRESHOLD": "0.8", "TRACEROOT_RANK_BY": "claude", "TRACEROOT_JEV_CONTEXT": "windows"},
+}
+ACTIVE_CONFIG = "v5"
 HELD_OUT_PROJECTS = {p for p, spec in PROJECTS.items() if spec.get("held_out")}
 
 
@@ -84,7 +92,7 @@ def full_source_text(case: Case, parsed) -> str:
 # ---------- methods ----------
 
 def run_traceroot(case: Case) -> dict:
-    env = dict(os.environ, TRACEROOT_ROOT=str(case.root))
+    env = dict(os.environ, TRACEROOT_ROOT=str(case.root), **CONFIGS[ACTIVE_CONFIG])
     t = time.perf_counter()
     proc = subprocess.run([str(TRACEROOT_EXE), "analyze", "--run", case.cmd], cwd=case.root, env=env,
                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
@@ -92,9 +100,14 @@ def run_traceroot(case: Case) -> dict:
     last = json.loads((case.root / ".traceroot" / "last.json").read_text(encoding="utf-8"))
     meta = last["meta"]
     causes = last["causes"]
+    rank = first_hit_rank(causes, case)
+    check = last.get("jev_check")
+    # v5 prints Jev's pick as an `alt:` line when it disagrees, so that cause is shown up front too
+    alt_rank = check["jev_pick_rank"] if check and not check["agree"] and last.get("order_by") == "claude" else None
     return {
-        "source": last["source"], "gate": last.get("gate"), "causes": causes,
-        "top1": first_hit_rank(causes, case) == 1, "hit_rank": first_hit_rank(causes, case),
+        "config": ACTIVE_CONFIG, "source": last["source"], "gate": last.get("gate"), "causes": causes,
+        "jev_check": check, "order_by": last.get("order_by"),
+        "top1": rank == 1, "hit_rank": rank, "shown_hit": rank == 1 or (alt_rank is not None and rank == alt_rank),
         "model_tokens": meta["claude_tokens"] + meta["jev_tokens"],
         "claude_tokens": meta["claude_tokens"], "jev_tokens": meta["jev_tokens"],
         "returned_tokens": est(proc.stdout), "latency_ms": ms, "stderr": proc.stderr.strip()[-300:],
@@ -165,10 +178,14 @@ def method_stats(rows: list[dict], key: str) -> dict:
             "tokens": avg(r["model_tokens"] for r in rs), "ms": avg(r["latency_ms"] for r in rs)}
 
 
-def claude_order_rank(row: dict) -> int | None:
-    """Ablation: TraceRoot's own candidates, but ordered by Claude's rank instead of Jev's score."""
+def claude_order_rank(row: dict, by: str = "claude") -> int | None:
+    """Ablation: rank of the first hit when TraceRoot's own candidates are ordered by Claude's rank
+    (by="claude") or by Jev's score (by="jev"), whatever order the run actually shipped."""
     t = row["traceroot"]
-    causes = sorted(t["causes"], key=lambda c: (c.get("claude_rank") is None, c.get("claude_rank") or 0))
+    if by == "jev":
+        causes = sorted(t["causes"], key=lambda c: -(c.get("jev_p") or 0))
+    else:
+        causes = sorted(t["causes"], key=lambda c: (c.get("claude_rank") is None, c.get("claude_rank") or 0))
     truth_file, truth_line = row["truth"].rsplit(":", 1)
     crash_file, crash_line = row["crash"].rsplit(":", 1)
     ok = [(truth_file, int(truth_line))] + ([(crash_file, int(crash_line))] if row.get("crash_ok") else [])
@@ -182,8 +199,9 @@ def claude_order_rank(row: dict) -> int | None:
 def summarize(rows: list[dict]) -> str:
     tr, bl = method_stats(rows, "traceroot"), method_stats(rows, "baseline")
     full_rows = [r for r in rows if r["traceroot"]["source"] == "full"]
-    jev_order_top1 = sum(r["traceroot"]["top1"] for r in full_rows)
-    claude_order_top1 = sum(claude_order_rank(r) == 1 for r in full_rows)
+    jev_order_top1 = sum(claude_order_rank(r, "jev") == 1 for r in full_rows)
+    claude_order_top1 = sum(claude_order_rank(r, "claude") == 1 for r in full_rows)
+    shipped = {r["traceroot"].get("order_by") or "jev" for r in full_rows}
     gate = [r for r in rows if r["traceroot"]["source"] == "jev_gate"]
     full = [r for r in rows if r["traceroot"]["source"] == "full"]
     out = ["# TraceRoot benchmark results", "",
@@ -228,9 +246,9 @@ def summarize(rows: list[dict]) -> str:
                    f"| {change:+.0f}% | {ctx_b:,.0f} -> {ctx_t:,.0f} ({100 * (ctx_t / ctx_b - 1):+.0f}%) |")
 
     out += ["", "## Does Jev's re-ranking help? (full-path cases only)", "",
-            f"Same TraceRoot candidates, two orderings: **Jev score** (what TraceRoot ships) top-1 "
+            f"Same TraceRoot candidates, two orderings: **Jev score** top-1 "
             f"{pct(jev_order_top1, len(full_rows))} vs. **Claude's own rank** top-1 "
-            f"{pct(claude_order_top1, len(full_rows))}."]
+            f"{pct(claude_order_top1, len(full_rows))}. (These runs shipped: {', '.join(sorted(shipped))} order.)"]
 
     out += ["", "## Tokens the calling agent reads", "",
             "| | Avg tokens / case |", "|---|---|",
@@ -276,7 +294,22 @@ def main() -> None:
     ap.add_argument("--no-baseline", action="store_true")
     ap.add_argument("--rerun", action="store_true", help="rerun cases already in results.jsonl")
     ap.add_argument("--summarize", action="store_true")
+    ap.add_argument("--config", choices=sorted(CONFIGS), default="v5", help="TraceRoot settings to measure")
+    ap.add_argument("--out", help="results file name in bench/out (default results.jsonl)")
+    ap.add_argument("--baseline-from", help="reuse baseline results by case id from this jsonl (no new calls)")
     a = ap.parse_args()
+
+    global ACTIVE_CONFIG, RESULTS
+    ACTIVE_CONFIG = a.config
+    if a.out:
+        RESULTS = OUT / a.out
+    reuse = {}
+    if a.baseline_from:
+        for ln in Path(a.baseline_from).read_text(encoding="utf-8").splitlines():
+            if ln.strip():
+                r = json.loads(ln)
+                if "baseline" in r:
+                    reuse[r["id"]] = r["baseline"]
 
     if a.summarize:
         SUMMARY.write_text(summarize(load_results()), encoding="utf-8")
@@ -297,7 +330,9 @@ def main() -> None:
                 last = case.stderr.strip().splitlines()[-1]
                 print(f"{mut['id']:10} ok  truth {case.truth_file}:{case.truth_line:<4} {last[:80]}")
                 continue
-            row = run_case(project, spec, mut, baseline=not a.no_baseline)
+            row = run_case(project, spec, mut, baseline=not a.no_baseline and mut["id"] not in reuse)
+            if mut["id"] in reuse:
+                row["baseline"] = reuse[mut["id"]]
             if a.rerun:
                 rows = [r for r in load_results() if r["id"] != row["id"]] + [row]
                 RESULTS.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
@@ -308,7 +343,7 @@ def main() -> None:
             print(f"{row['id']:10} {row['distance']:10} truth {row['truth']:22} | traceroot {t['source']:8} "
                   f"rank {t['hit_rank'] or 'miss':<4} {t['model_tokens']:>6} tok | baseline rank "
                   f"{b.get('hit_rank') or 'miss':<4} {b.get('model_tokens', 0):>6} tok", flush=True)
-    if not a.dry:
+    if not a.dry and not a.out:
         SUMMARY.write_text(summarize(load_results()), encoding="utf-8")
         print(f"\nwrote {SUMMARY}")
 

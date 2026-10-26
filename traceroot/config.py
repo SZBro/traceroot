@@ -37,7 +37,12 @@ BLOCKED_SUFFIXES = {".pem", ".key"}
 BLOCKED_DIRS = {".git", "site-packages", "dist-packages", ".venv", "venv", "__pycache__"}
 
 # Jev gate
-GATE_THRESHOLD = _float("GATE_THRESHOLD", 0.8)
+GATE_THRESHOLD = _float("GATE_THRESHOLD", 0.8)    # 0.65 was tried in v5 and reverted (LOG.md 21:10)
+
+# How the full path ranks causes: "claude" (v5: Claude's order, Jev checks agreement) or "jev" (v4: Jev re-ranks)
+RANK_BY = os.environ.get("TRACEROOT_RANK_BY", "claude").strip().lower()
+# What code Jev sees: "windows" (v5: traceback + crash windows) or "all" (v4: + one-hop definitions)
+JEV_CONTEXT = os.environ.get("TRACEROOT_JEV_CONTEXT", "windows").strip().lower()
 CATEGORIES = [
     "missing_import_or_module",
     "undefined_name_or_typo",

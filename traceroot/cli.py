@@ -34,7 +34,11 @@ def cmd_analyze(args) -> int:
         print("traceroot: the command failed but printed nothing to stderr")
         return 1
     result = pipeline.analyze(text, extra_file=args.file)
-    shown = _show(result["causes"][0], 0, len(result["causes"]), args.json)
+    if args.json:
+        shown = _show(result["causes"][0], 0, len(result["causes"]), True)
+    else:
+        shown = pipeline.format_top(result)
+        print(shown)
     try:
         stats.append(result, shown)
     except OSError as e:

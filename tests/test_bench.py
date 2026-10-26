@@ -1,11 +1,14 @@
 """Unit tests for the benchmark's case building and scoring (no model calls)."""
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 BENCH = Path(__file__).resolve().parent.parent / "bench"
 sys.path.insert(0, str(BENCH))
 
+import mutate  # noqa: E402
 import run_bench  # noqa: E402
 from cases import PROJECTS  # noqa: E402
 from mutate import Case, build  # noqa: E402
@@ -62,7 +65,11 @@ class CaseBuildTests(unittest.TestCase):
     def test_build_applies_mutation_and_records_truth(self):
         spec = PROJECTS["shop"]
         mut = spec["mutations"][0]
-        c = build("shop", spec, mut)
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(mutate, "WORK_DIR", Path(d)):
+            c = build("shop", spec, mut)
+            self._check_built(c, mut)
+
+    def _check_built(self, c, mut):
         line = (c.root / c.truth_file).read_text(encoding="utf-8").splitlines()[c.truth_line - 1]
         self.assertIn(mut["replace"], line)
         self.assertIn("Traceback", c.stderr)

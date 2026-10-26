@@ -56,6 +56,31 @@ class RankTests(unittest.TestCase):
         self.assertEqual(([c["id"] for c in causes], by), (["a", "b"], "claude"))
 
 
+class V5RankingTests(unittest.TestCase):
+    """v5: Claude's order ships; Jev is a second opinion shown as `alt:` when it disagrees."""
+
+    def test_rank_by_claude_ignores_jev_order(self):
+        causes, by = pipeline.rank([cause("a", 1, 0.6, jev=0.2), cause("b", 2, 0.3, jev=0.7)], by="claude")
+        self.assertEqual(([c["id"] for c in causes], by), (["a", "b"], "claude"))
+
+    def test_agreement_and_alt_line(self):
+        causes, _ = pipeline.rank([cause("a", 1, 0.6, jev=0.2), cause("b", 2, 0.3, jev=0.7)], by="claude")
+        check = pipeline.agreement(causes)
+        self.assertEqual(check, {"agree": False, "jev_pick": "b", "jev_pick_rank": 2})
+        out = pipeline.format_top({"causes": causes, "jev_check": check, "order_by": "claude"})
+        self.assertIn("Jev prefers #2", out)
+        self.assertIn("alt (Jev's pick, #2): b", out)
+
+    def test_agreement_has_no_alt_line(self):
+        causes, _ = pipeline.rank([cause("a", 1, 0.6, jev=0.8), cause("b", 2, 0.3, jev=0.2)], by="claude")
+        out = pipeline.format_top({"causes": causes, "jev_check": pipeline.agreement(causes), "order_by": "claude"})
+        self.assertIn("Jev agrees", out)
+        self.assertNotIn("alt", out)
+
+    def test_no_jev_scores_means_no_check(self):
+        self.assertIsNone(pipeline.agreement([cause("a", 1, 0.6)]))
+
+
 class FormatTests(unittest.TestCase):
     def test_compact_format(self):
         c = cause("x", 1, 0.6) | {"title": "items set to None", "file": "orders.py", "line": 40,

@@ -1,0 +1,7 @@
+[
+  {"member_id": "M-01", "name": "Priya Shah", "tier": "student", "joined": "2024-09-01"},
+  {"member_id": "M-02", "name": "Omar Haddad", "tier": "faculty", "joined": "2019-01-15"},
+  {"member_id": "M-03", "name": "Lena Fischer", "tier": "student", "joined": "2025-01-10"},
+  {"member_id": "M-04", "name": "Diego Ramos", "tier": "public", "joined": "2022-06-30"},
+  {"member_id": "M-05", "name": "Mei Tanaka", "tier": "faculty", "joined": "2021-03-03"}
+]
