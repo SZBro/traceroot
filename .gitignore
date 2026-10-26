@@ -3,3 +3,6 @@
 __pycache__/
 *.egg-info/
 .venv/
+
+# benchmark run output (regenerate with bench/run_bench.py)
+bench/out/

@@ -1,0 +1,8 @@
+[
+  {"order_id": "A-1001", "region": "WA", "discount": "SAVE10",
+   "lines": [{"sku": "BK-101", "qty": 2}, {"sku": "PN-201", "qty": 1}]},
+  {"order_id": "A-1002", "region": "OR", "discount": null,
+   "lines": [{"sku": "DS-401", "qty": 1}, {"sku": "BG-302", "qty": 1}]},
+  {"order_id": "A-1003", "region": "CA", "discount": "WELCOME5",
+   "lines": [{"sku": "DS-402", "qty": 1}, {"sku": "PN-202", "qty": 2}, {"sku": "BK-102", "qty": 3}]}
+]

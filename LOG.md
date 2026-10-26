@@ -661,3 +661,56 @@ actually happened. Step 7 entries had been stamped ~18:30 but were written ~19:3
 against `git log`).
 
 **Why:** this log is the graded record of the build, so its times should agree with the git history.
+
+---
+
+## 2026-10-25 20:04: Added: mutation benchmark (`bench/`) and project 1 ("shop")
+**Type:** Added, Plan
+
+**What:**
+- **`bench/projects/shop/`:** a clean multi-file app (catalog from CSV, cart, pricing with tax and
+  shipping, order receipts; 170 lines in 5 files).
+- **`bench/cases.py`:** 9 mutations. Each one replaces one exact line, and that line is the ground
+  truth. The cases are stored *outside* the project so the models never see them.
+- **`bench/mutate.py`:** copies the project, applies one mutation, and confirms the program crashes.
+- **`bench/run_bench.py`:** runs each case two ways and scores both against the mutated line
+  (hit = right file, ±1 line):
+  - **TraceRoot:** the real `traceroot analyze --run`
+  - **Baseline:** the same Haiku model and prompt, given the traceback plus **every project file in
+    full**, with no gate or Jev
+- It also records the tokens an agent would read with and without TraceRoot. Results go to the
+  git-ignored `bench/out/`, and the summary to the committed `bench/RESULTS.md`.
+
+**Why:** the 8 original test scripts are tiny, single-file, and hand-written by the same model the
+tool uses, so they can't support claims about accuracy or token savings. The user asked for real
+numbers. Mutation gives automatic ground truth, cases where the bug is far from the crash, and less
+author bias. Plan: one project at a time, then a full run.
+
+---
+
+## 2026-10-25 20:05: Result: benchmark v1 on "shop": TraceRoot loses to the full-file baseline
+**Type:** Result
+
+**What:** 9 cases:
+
+| | Top-1 | Avg model tokens |
+|---|---|---|
+| TraceRoot (v1) | **4/9** | ~7,500 |
+| Baseline (Claude + all files in full) | **9/9** | ~5,900 |
+
+- TraceRoot was right on all 4 bugs on or next to the crash line. The Jev gate answered 2 of them for
+  ~1.4–2.5k tokens.
+- It **missed all 5** where the bug was elsewhere (raw rows kept in `bench/out/results_shop_v1.jsonl`).
+
+**Why it missed:**
+1. **4 misses: the bug file was never sent.** `catalog.py` (`load_catalog`, `find_product`) had
+   already returned, so it isn't on the call stack. TraceRoot only reads files *in the traceback*.
+   Claude often named the right idea ("price read from CSV without float conversion") but couldn't
+   cite a file it was never shown, so it either gave no file or pointed at the call site.
+2. **1 miss: the window was too narrow.** The `DISCOUNTS` dict was 44 lines above the crash, outside
+   the ±20 window.
+3. **Tokens:** on a 170-line project the ±20 windows are about as big as the whole files, and Jev adds
+   ~3.7k tokens on the full path (gate + score). So TraceRoot cost *more* than sending everything.
+
+**Takeaway:** the 8/8 on our own test scripts was misleading. The original test scripts were single
+files, where the cause was always inside the window.
