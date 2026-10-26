@@ -1183,7 +1183,7 @@ agent context. The held-out set is also a tie on top-1 (6/9 each), and TraceRoot
 
 ---
 
-## 2026-10-25 21:53: Changed: README polish for GitHub; `next` shows both scores
+## 2026-10-25 21:51: Changed: README polish for GitHub; `next` shows both scores
 **Type:** Changed, Fixed
 
 **What:**
