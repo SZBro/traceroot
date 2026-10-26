@@ -48,6 +48,7 @@ CATEGORIES = [
 
 # Models
 JEV_MODEL = os.environ.get("TRACEROOT_JEV_MODEL", "jev-latest")
+JEV_TIMEOUT_S = 30.0
 CLAUDE_BACKEND = os.environ.get("TRACEROOT_CLAUDE_BACKEND", "cli").strip().lower() or "cli"
 CLAUDE_MODEL = os.environ.get("TRACEROOT_CLAUDE_MODEL", "claude-haiku-5-5").strip() or "claude-haiku-5-5"
 CLAUDE_TIMEOUT_S = 120

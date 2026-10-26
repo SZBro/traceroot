@@ -153,6 +153,7 @@ def analyze(text: str, extra_file: str | None = None) -> dict:
 
     tb, sl = traceback_text(parsed), slices_text(parsed)
     claude_meta, order_by = None, None
+    jev_start = jev_client.last_usage["input_tokens"] + jev_client.last_usage["output_tokens"]
 
     gate = jev_client.gate(tb, sl)
     confident = bool(gate) and gate["category"] != "other_or_complex" \
@@ -178,8 +179,6 @@ def analyze(text: str, extra_file: str | None = None) -> dict:
             if scores and len(scores) == len(causes):
                 for c, p in zip(causes, scores):
                     c["jev_p"] = _prob(p)
-            elif gate is not None or scores is not None:
-                notice("Jev scoring unavailable; ranking by Claude only")
         causes, order_by = rank(causes)
 
     referenced = {s.file for s in parsed.slices}
@@ -197,7 +196,8 @@ def analyze(text: str, extra_file: str | None = None) -> dict:
             "backend": (claude_meta or {}).get("backend"),
             "claude_tokens": (claude_meta or {}).get("tokens", 0),
             "claude_cost_usd": (claude_meta or {}).get("cost_usd", 0.0),
-            "jev_tokens": 0,
+            "jev_tokens": jev_client.last_usage["input_tokens"] + jev_client.last_usage["output_tokens"]
+            - jev_start,
             "raw_tokens": est_tokens(raw_text),
             "latency_ms": int((time.perf_counter() - t0) * 1000),
         },

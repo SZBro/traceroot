@@ -365,3 +365,111 @@ analyze call went from ~7.8k to **~3.5k tokens** ($0.00105). 17/17 unit tests st
 **Decision:** keep `cli` as the default backend. With these flags its overhead is close to a raw API
 call, and it needs no paid API key (it uses the user's Claude login and counts against plan usage
 limits). The API backend stays optional (step 7) and goes in the README comparison.
+
+---
+
+## 2026-10-25 18:09: Decision: Jev API format from the SDK source
+**Type:** Decision
+
+**What:** read the installed `typesafe-sdk` 0.7.5 source (`question_types.py`, `response_types.py`,
+`_schemas/models.py`, the sync client) instead of guessing. The format:
+- Call `client.system_one(state=..., questions={name: Choice(instructions=..., criteria={label: description})})`.
+- The answer is `res.choices[name]`, with `.choice` (top label), `.confidence`, and `.probabilities` (label → p).
+- Usage is `res.usage.input_tokens` and `output_tokens`. Output tokens are free.
+- Errors subclass `TypeSafeError`. The default timeout is 10 s (we use 30 s) with 2 retries. The key
+  comes from `TYPESAFE_API_KEY`.
+
+**Why:** the spec says not to invent API formats.
+
+---
+
+## 2026-10-25 18:10: Added: real `jev_client.py` (gate and score)
+**Type:** Added
+
+**What:**
+- `gate()` asks one `choice` question over the 9 fixed categories, each with a description.
+- `score()` asks one `choice` question whose options are Claude's candidates. The labels are
+  candidate ids, because titles could collide; each description is the title plus `file:line`.
+  It returns one probability per candidate in the original order, and rejects the answer if Jev's
+  options don't match.
+- With no key, a bad key, or any API error, it returns `None` with a one-line notice and never
+  crashes. The key and request are never printed.
+- It tracks Jev token usage, which goes into `meta.jev_tokens`.
+
+**Decision:** every category description says the mistake is **on the crash line**, and
+`other_or_complex` is "the bad value was created in a different function and passed along".
+
+**Why:** the gate's quick answer points at the crash line. In the None-cart case the category
+(`none_value`) is obvious, but the fix is 3 calls earlier. A gate that only judged the category
+would confidently send the user to the wrong line.
+
+---
+
+## 2026-10-25 18:11: Result: gate tuning, threshold stays 0.8
+**Type:** Result, Decision
+
+**What:** `tests/fixtures/gate_report.py` runs only the gate on all 8 saved tracebacks
+(8 Jev calls, no Claude):
+
+| Test script | Gate pick | p | Should take |
+|---|---|---|---|
+| easy_missing_import | missing_import_or_module | 0.99 | gate |
+| easy_typo_name | undefined_name_or_typo | 1.00 | gate |
+| easy_file_not_found | file_not_found | 0.94 | gate |
+| easy_wrong_args | wrong_arguments | 1.00 | gate |
+| medium_none_cart | other_or_complex | 0.99 | full |
+| medium_keyerror | other_or_complex | 0.96 | full |
+| hard_off_by_one | other_or_complex | 0.95 | full |
+| hard_str_int | other_or_complex | 0.96 | full |
+
+Each gate call took about 70–90 ms (the first was ~850 ms with the TLS connection) and used
+about 850–1,200 input tokens.
+
+**Decision:** keep `GATE_THRESHOLD = 0.8`. The lowest correct easy pick is 0.94, so 0.8 leaves a margin.
+The separation comes from the "on the crash line" category wording, not the threshold. All 4 harder
+cases chose `other_or_complex` at ≥ 0.95, so no threshold value would have let them through.
+
+**Caveat:** this is only 8 test scripts, and the easy ones have obvious messages
+("Did you forget to import 'math'?"). Real-world errors will be closer calls.
+
+---
+
+## 2026-10-25 18:12: Result: full pipeline on all 8 test scripts (12 Jev + 4 Claude calls)
+**Type:** Result
+
+**What:** `python tests/fixtures/run_all.py` with real Jev and Claude:
+
+| Test script | Path | Final #1 cause | Claude #1 | Jev #1 (p) | Agree |
+|---|---|---|---|---|---|
+| easy_missing_import | jev_gate | L2 NameError 'math' | - | L2 (0.99) | - |
+| easy_typo_name | jev_gate | L5 NameError 'totl' | - | L5 (1.00) | - |
+| easy_file_not_found | jev_gate | L5 FileNotFoundError | - | L5 (0.94) | - |
+| easy_wrong_args | jev_gate | L6 missing arg 'age' | - | L6 (1.00) | - |
+| medium_none_cart | full | L5 load_cart converts empty list to None | L5 | L5 (0.99) | yes |
+| medium_keyerror | full | L3 build_profile stores user_name | L3 | L3 (0.96) | yes |
+| hard_off_by_one | full | L4 page_bounds uses total+1 | L4 | L4 (0.97) | yes |
+| hard_str_int | full | L10 qty never converted to int | L10 | L10 (0.87) | yes |
+
+- **8/8 correct.** The gate handled 4/8 alone with no Claude call. On the other 4, Jev's
+  independent score agreed with Claude's #1 every time, and every #1 is the exact planted line.
+- Total time was 47 s. The gate path takes about 1 s per error; the full path about 10 s.
+- Final order now comes from Jev's probability (`order_by = "jev"`). Claude's rank and confidence
+  are kept beside it in `last.json`.
+- Claude/Jev agreement was 4/4, so there are no disagreements to report yet. The test scripts
+  have a single clear cause each; harder or ambiguous bugs would test the second opinion more.
+
+---
+
+## 2026-10-25 18:12: Added: Jev unit tests and `run_all.py` summary table
+**Type:** Added
+
+**What:** `tests/test_jev_client.py` adds 7 tests with fake Jev answers (no API calls):
+- no key → `None` and a single notice
+- gate output shape
+- score keeps candidate order and rejects mismatched options
+- gate decision: confident → no Claude call; p < threshold → Claude; `other_or_complex` at 0.99 → still Claude
+
+`run_all.py` now prints a table with each script's path, Claude's #1 and Jev's #1 picks, and
+whether they agree. Each script's header now prints before its output (`flush=True`).
+
+**Why:** gate logic and fallbacks are tested without spending API calls. 24/24 tests pass.

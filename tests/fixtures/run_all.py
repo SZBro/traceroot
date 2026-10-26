@@ -6,6 +6,7 @@
 Run from the TraceRoot folder.
 """
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -50,9 +51,27 @@ def capture() -> None:
 
 
 def analyze() -> None:
+    rows = []
     for name, (expected, bug) in FIXTURES.items():
-        print(f"\n=== {name}  (expect: {expected}; planted: {bug})")
+        print(f"\n=== {name}  (expect: {expected}; planted: {bug})", flush=True)
         subprocess.run(f'traceroot analyze --run "python tests/fixtures/{name}"', shell=True, cwd=ROOT)
+        rows.append((Path(name).stem, summarize()))
+    print(f"\n{'fixture':22} {'path':8} {'top cause (final)':40} {'claude #1':>10} {'jev #1':>10} agree")
+    for stem, s in rows:
+        print(f"{stem:22} {s['source']:8} {s['top']:40.40} {s['claude']:>10} {s['jev']:>10} {s['agree']}")
+
+
+def summarize() -> dict:
+    """Read .traceroot/last.json: path taken, top cause, and Claude's vs Jev's #1 pick (as file:line)."""
+    d = json.loads((ROOT / ".traceroot" / "last.json").read_text(encoding="utf-8"))
+    causes = d["causes"]
+    loc = lambda c: f"L{c['line']}" if c and c.get("line") else "-"  # noqa: E731
+    top = causes[0]
+    claude_top = min((c for c in causes if c.get("claude_rank")), key=lambda c: c["claude_rank"], default=None)
+    jev_top = max((c for c in causes if c.get("jev_p") is not None), key=lambda c: c["jev_p"], default=None)
+    agree = "-" if not (claude_top and jev_top) else "yes" if claude_top["id"] == jev_top["id"] else "NO"
+    return {"source": d["source"], "top": f"{loc(top)} {top['title']}", "claude": loc(claude_top),
+            "jev": f"{loc(jev_top)}" + (f" {jev_top['jev_p']:.2f}" if jev_top else ""), "agree": agree}
 
 
 if __name__ == "__main__":
