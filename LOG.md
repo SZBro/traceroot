@@ -240,3 +240,98 @@ machines.
 **Notable:** in the None-cart case, `load_cart` (the real cause) is **not in the traceback at all**,
 because it already returned. It's only visible because the ±20-line window around `checkout`
 covers it. This is the kind of case the Claude path exists for.
+
+---
+
+## 2026-10-25 17:56: Added: `claude_client.py` (cli backend)
+**Type:** Added
+
+**What:**
+- `ask_claude(prompt, schema_hint) -> dict`, with the prompts kept as constants at the top of the file.
+- The CLI backend runs `claude -p --output-format json --model <TRACEROOT_CLAUDE_MODEL> --tools ""`
+  from a temporary neutral folder, sending the prompt on **stdin**.
+- It trusts `is_error` over `subtype` and extracts the JSON defensively (strips code fences, then
+  takes the first `{` to the last `}`).
+- It retries once with a "return ONLY JSON" reminder.
+- It records backend, latency, real token usage, and cost in `_meta`.
+- The `api` backend raises a clear "not built yet" error until step 7.
+
+**Why:** build step 3. Stdin avoids Windows' ~32k-character command-line limit on big prompts.
+A one-call test returned `{"ok": true}` (~15k tokens, $0.0007, 5.5 s).
+
+**Decision:** added a `category` field (one of the 9 gate categories) to the candidate JSON schema.
+The compact output's first line (`[1/4] none_value ...`) needs a category for every cause, not only
+gate answers.
+
+---
+
+## 2026-10-25 17:57: Added: `store.py` and a placeholder `jev_client.py`
+**Type:** Added
+
+**What:** `store.save/load/advance` reads and writes `.traceroot/last.json` with a `cursor`, so
+`next` makes no model calls. `jev_client.gate()` and `score()` currently return `None`
+("Jev unavailable").
+
+**Why:** gets `analyze` → `next` working end to end before adding Jev in step 4. The `None`
+return is the same fallback path the real client uses when there's no key or the API fails.
+
+---
+
+## 2026-10-25 17:58: Added: `pipeline.py` (orchestration, validation, ranking)
+**Type:** Added
+
+**What:**
+- Flow: parse → Jev gate → (if not confident) Claude candidates → Jev score → validate → rank →
+  save. The gate counts as confident only if p ≥ `GATE_THRESHOLD` and the category isn't
+  `other_or_complex`.
+- Validation (plain code):
+  - drops candidates without a title and renames duplicate ids
+  - nulls any file that doesn't exist or isn't safe to read (so `.env` can never be cited), and its line
+  - nulls probabilities outside 0–1
+  - maps unknown categories to `other_or_complex`
+  - caps the list at 6
+- Ranking: Jev probability when every cause has one, otherwise `claude_rank`. Both rankings and
+  `order_by` are saved.
+- If Claude fails, the result is a single "crash site" cause instead of a crash (`source = "fallback"`).
+- Saves `meta` for step 5's stats: backend, Claude tokens and cost, `raw_tokens` (traceback + full
+  referenced files, `len // 4`), and latency.
+
+**Why:** the spec's "plain code validates everything": the models suggest, the code checks.
+
+---
+
+## 2026-10-25 17:59: Added: `analyze` and `next` commands
+**Type:** Added
+
+**What:** `traceroot analyze` accepts `--run "cmd"`, a traceback file, raw error text, or stdin, plus
+`--file PATH` and `--json`. `traceroot next [--json]` prints the next cause, or
+`no more candidates; try traceroot analyze with --file`. Compact output matches the spec format.
+`view` and `stats` print "arrives in step N" for now. stdout is forced to UTF-8 for Windows.
+
+**Why:** build step 3's goal: `analyze` and `next` working end to end.
+
+---
+
+## 2026-10-25 18:00: Result: end-to-end runs, Claude only (3 Claude calls)
+**Type:** Result
+
+**What:** Claude's #1 cause hit the **exact planted line** on all three non-trivial test scripts:
+
+| Test script | Claude's #1 cause | Planted bug | Match |
+|---|---|---|---|
+| medium_none_cart | `none_value` at line 5: "load_cart replaces empty cart list with None" (0.60) | line 5 | yes |
+| hard_off_by_one | `key_or_index_error` at line 4: "page_bounds uses total + 1" (0.85) | line 4 | yes |
+| hard_str_int | `wrong_type` at line 10: "qty kept as string, never converted" (0.85) | line 10 | yes |
+
+- None-cart is the notable one: Claude found `load_cart`, which is **not in the traceback**, from the
+  merged code slice. Causes #2–#4 were sensible alternatives (guard in price_items, validate in
+  subtotal, `not items` vs `is None`).
+- Edge cases checked with no model spend (forced backend failure): a command that exits 0, no input,
+  Claude failing (falls back to the crash site), non-Python text, and piped stdin.
+- Unit tests: 17 pass (11 parser + 6 new pipeline tests for validation, ranking, and output format).
+
+**Finding (for the README):** on these tiny test scripts, Claude spends **more** tokens (~7.8k, mostly
+Claude Code's fixed system prompt) than the "raw" traceback + files (~313). TraceRoot's saving is
+in the **calling agent's context** (it reads 4 short lines instead of the traceback and files), and
+it grows with file size. The Jev gate exists to skip that Claude call on easy errors, and step 4
+will show how often it does.
