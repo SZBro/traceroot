@@ -140,7 +140,10 @@ def _call_cli(prompt: str) -> tuple[str, int, float]:
 
 
 def _call_api(prompt: str) -> tuple[str, int, float]:
-    raise ClaudeError("the api backend is not built yet (build step 7); use TRACEROOT_CLAUDE_BACKEND=cli")
+    # Not implemented yet (see README "Future work"). To add it: use the `anthropic` SDK with
+    # ANTHROPIC_API_KEY, model config.CLAUDE_MODEL, system=SYSTEM_PROMPT, a small max_tokens, and
+    # return (reply text, input + output tokens from response.usage, cost or 0.0).
+    raise ClaudeError("the api backend is not implemented yet; use TRACEROOT_CLAUDE_BACKEND=cli")
 
 
 def diagram_prompt(error_line: str, frames: str, cause: str, slices: str) -> str:
