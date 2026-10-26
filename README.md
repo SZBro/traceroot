@@ -23,21 +23,85 @@ more: `traceroot next`
 The crash in that example happens in `price_items` (line 11), three calls away. TraceRoot points
 at `load_cart` (line 5), where the bad value is created. That function isn't in the traceback at all.
 
-**What it's for:** cheaper, cleaner debugging. On a 54-bug benchmark ([Results](#results)):
-- **Same accuracy as giving Claude every file** (47/54 top-1), with **18% fewer model tokens** and the
-  agent reading **~62 tokens instead of ~1,800** (−97%).
-- **Simple, common errors:** the Jev gate answers alone. That's **76% fewer model tokens**, 18/18 correct.
-- **Scope:** Python tracebacks. Other languages fall back to text-only analysis, with no code context.
+**What it's for:** cheaper, cleaner debugging for coding agents. On a 54-bug benchmark it finds
+the root cause **as accurately as giving Claude every file (47/54)**, with **18% fewer model tokens**
+and **97% less error text in the agent's context**. Simple errors take **0.7 s instead of 8.2 s** with
+76% fewer tokens. See [Why use it](#why-use-it-the-advantages-measured). Python tracebacks only, for now.
 
 Commands: `traceroot` or the short alias `trt` (not `tr`, which is a standard Unix command).
 
-**Contents:** [**Set it up for your coding agent**](#set-it-up-for-your-coding-agent) ·
+**Contents:** [Why use it](#why-use-it-the-advantages-measured) ·
+[**Set it up for your coding agent**](#set-it-up-for-your-coding-agent) ·
 [How it works](#how-it-works) · [Responsibilities](#responsibilities-what-each-part-does) ·
 [Developer install](#developer-install) · [Usage](#usage) · [Backends](#claude-backends-claude--p-vs-the-api) ·
 [Results](#results) · [Limitations](#limitations) · [Future work](#future-work) ·
 [Build log](LOG.md)
 
 ---
+
+## Why use it: the advantages, measured
+
+Every number below comes from the benchmark in this repo: **54 planted bugs in 6 multi-file Python
+projects**. TraceRoot is compared with the same Claude model (Haiku) given the traceback plus **every
+project file in full**, i.e. "just ask Claude with everything". The raw data is in
+[`bench/versions/v6_results.jsonl`](bench/versions/v6_results.jsonl), and the details are in
+[Results](#results).
+
+| | **TraceRoot** | Claude + every file | Difference |
+|---|---|---|---|
+| Error text left in the agent's context, per bug | **62 tokens** | 1,787 (traceback + its files), 2,485 (whole project) | **−97% / −98%** |
+| Correct #1 root cause, all 54 bugs | **47/54 (87%)** | 47/54 (87%) | **same** |
+| Model tokens per bug, all 54 bugs | **7,040** | 8,621 | **−18%** |
+| Time per bug, all 54 bugs | **7.6 s** | 9.3 s | **−18%** |
+| **Simple errors** (18 bugs): correct #1 cause | **18/18** | 17/18 | +1 |
+| **Simple errors**: model tokens | **1,968** | 8,202 | **−76%** |
+| **Simple errors**: time to answer | **0.7 s** | 8.2 s | **~12× faster** |
+| Next-best cause if #1 is wrong (`traceroot next`) | **0 tokens** (saved list) | a new model call | free |
+
+**1. It keeps the agent's context clean.** Instead of a traceback and several source files
+(~1,800–2,500 tokens), the agent reads a ~62-token answer: category, `file:line`, cause, and fix.
+That matters because everything an agent reads stays in its context and is re-sent on every later
+turn.
+
+**2. Simple errors become almost free.** Jev's gate answered **18 of 54 bugs (33%) by itself**:
+missing imports, typos, wrong arguments, off-by-ones on the crash line. **All 18 were right**, at
+~2k tokens and **0.7 s each, with no Claude call at all.**
+
+**3. Same accuracy as "send everything", from a fraction of the code.** Claude sees only the crash
+windows plus the definitions the failing code actually uses (about 1.4k tokens of code), and still
+names the exact buggy line as often as when it sees every file: 47/54 each.
+
+**4. It finds root causes that aren't on the call stack.** In 18 of the bugs, the mistake was in a
+*different file* from the crash (a value parsed wrong in `catalog.py`, crashing later in `pricing.py`).
+TraceRoot found 15/18, the same as the baseline, because it follows the functions and constants the
+failing code uses, even after they've returned.
+
+**5. Its cost stays flat as projects grow; "send everything" doesn't.**
+
+| Project (lines of Python) | Claude + every file | TraceRoot's Claude call | TraceRoot, average per bug |
+|---|---|---|---|
+| shop (170) | 6,462 | 5,177 | 7,455 |
+| bank (277) | 8,171 | 5,223 | 6,568 |
+| library (291) | 8,327 | 5,957 | 6,812 |
+| planner (315) | 8,617 | 6,223 | 7,170 |
+| logs (357) | 8,924 | 5,449 | 6,998 |
+| gradebook (401) | **11,224** | 5,683 | 7,239 |
+
+The baseline grew **74%** from the smallest project to the largest, while TraceRoot's Claude call
+stayed at about 5.2–6.2k. These projects are small. Real codebases have thousands of lines, where
+sending every file isn't even possible.
+
+**6. It's safe by construction.** Plain code decides what the models see. It never reads `.env`,
+`*.key`, `*.pem`, `.git/`, or installed packages, and it checks every `file:line` the model cites
+against real project files. Unit tests cover all of these rules (52 tests, no model calls).
+
+**Where it doesn't help (yet):**
+- On **complex errors in small projects**, TraceRoot spends ~8% *more* model tokens than "send
+  everything" (9,577 vs. 8,830) and is 1 case less accurate (29/36 vs. 30/36).
+- In a one-off **end-to-end agent trial** on the 170-line shop project, the agent used *more* total
+  tokens with TraceRoot (246k vs. 207k), because extra agent turns cost more than the file reading
+  saved. See [the agent trial](#does-it-actually-help-an-agent-one-real-trial-honestly).
+- It only gives code context for **Python** tracebacks.
 
 ## Set it up for your coding agent
 

@@ -1244,3 +1244,23 @@ of shop-01, outside this repo:
   agent-behavior noise.
 - The README says all this plainly. The benchmark's token savings are for the debugging step, not
   end-to-end agent sessions. An agent-level benchmark on larger projects is now under Future work.
+
+---
+
+## 2026-10-25 22:05: Changed: README "Why use it" section with measured advantages
+**Type:** Changed
+
+**What:** a new section near the top of the README, computed from `bench/versions/v6_results.jsonl`
+(no hand-typed numbers):
+- **Agent context:** 62 tokens per bug vs. 1,787 (the traceback's files) and 2,485 (whole project).
+- **All bugs:** 47/54 top-1 for both, 7,040 vs. 8,621 model tokens (−18%), 7.6 s vs. 9.3 s.
+- **Simple errors (gate):** 18/18 vs. 17/18, 1,968 vs. 8,202 tokens (−76%), **0.7 s vs. 8.2 s**.
+- **Cross-file bugs:** 15/18 for both.
+- **Scaling by project:** the baseline rose from 6,462 tokens (170 lines) to 11,224 (401 lines),
+  +74%. TraceRoot's Claude call stayed at 5.2–6.2k.
+- **"Where it doesn't help (yet)":** complex errors cost +8% tokens and one fewer correct case
+  (29/36 vs. 30/36), the agent trial used more total tokens, and it's Python only.
+
+The intro line now summarizes these numbers and links to the section.
+
+**Why:** the user asked for the README to show the advantages with real data from our tests.
