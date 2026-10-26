@@ -1019,7 +1019,7 @@ then run v4 vs. v5 on the fresh held-out project 5. `.env.example` is back to 0.
 
 ---
 
-## 2026-10-25 21:22: Decision: ship v5, final numbers, README updated
+## 2026-10-25 21:21: Decision: ship v5, final numbers, README updated
 **Type:** Decision, Changed
 
 **Decision:** v5 (threshold 0.8, Claude ranking with a Jev agreement check, lean Jev context) is
