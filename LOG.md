@@ -869,7 +869,7 @@ The gate answered 3/9, all correct, at ~3.4k tokens vs. ~8.4k. TraceRoot found p
 
 ---
 
-## 2026-10-25 20:55: Result: final benchmark numbers (36 cases)
+## 2026-10-25 20:52: Result: final benchmark numbers (36 cases)
 **Type:** Result, Decision
 
 | Errors | Cases | TraceRoot top-1 | Baseline top-1 | TraceRoot model tok | Baseline model tok | Agent context (baseline → TraceRoot) |
