@@ -664,7 +664,7 @@ against `git log`).
 
 ---
 
-## 2026-10-25 20:04: Added: mutation benchmark (`bench/`) and project 1 ("shop")
+## 2026-10-25 19:53: Added: mutation benchmark (`bench/`) and project 1 ("shop")
 **Type:** Added, Plan
 
 **What:**
@@ -688,7 +688,7 @@ author bias. Plan: one project at a time, then a full run.
 
 ---
 
-## 2026-10-25 20:05: Result: benchmark v1 on "shop": TraceRoot loses to the full-file baseline
+## 2026-10-25 19:55: Result: benchmark v1 on "shop": TraceRoot loses to the full-file baseline
 **Type:** Result
 
 **What:** 9 cases:
