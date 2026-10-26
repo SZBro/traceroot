@@ -473,3 +473,55 @@ cases chose `other_or_complex` at ≥ 0.95, so no threshold value would have let
 whether they agree. Each script's header now prints before its output (`flush=True`).
 
 **Why:** gate logic and fallbacks are tested without spending API calls. 24/24 tests pass.
+
+---
+
+## 2026-10-25 18:15: Added: `stats.py`, runs.csv logging, and `traceroot stats`
+**Type:** Added
+
+**What:**
+- Every `analyze` appends one row to `.traceroot/runs.csv` with the spec's columns:
+  `timestamp, error_type, path, gate_category, gate_p, claude_top, jev_top, agree, raw_tokens,
+  returned_tokens, claude_tokens, jev_tokens, latency_ms, backend`.
+- `claude_top` / `jev_top` are each model's #1 cause as `file:line`. `agree` is `yes` or `no` only on
+  full runs where both models ranked.
+- `returned_tokens` is measured from the **exact text `analyze` printed** (compact or `--json`).
+- `raw_tokens` is the traceback plus the full contents of the referenced project files.
+- Text token counts are `len // 4` estimates. Claude and Jev token counts are what their APIs report.
+- `traceroot stats` prints: number of runs, % handled by the Jev gate alone, the Claude/Jev
+  agreement rate, average raw vs returned tokens with the reduction, total model tokens
+  (Claude + Jev), and a per-path table (average tokens and latency).
+- 4 new unit tests (28 total, all passing).
+
+**Why:** build step 5. These numbers feed the README results table.
+
+---
+
+## 2026-10-25 18:18: Result: `traceroot stats` on all 8 test scripts (12 Jev + 4 Claude calls)
+**Type:** Result
+
+**What:** this second full run reproduced step 4 exactly: **8/8 correct**, and every #1 is on the same
+line. `traceroot stats`:
+
+```
+runs:                     8
+handled by Jev gate alone: 4/8 (50%)
+Claude/Jev agree on #1:    4/4 (100%)
+agent tokens per run:      215 raw -> 58 returned (avg reduction 68%; estimates, len//4)
+model tokens spent:        25644 total (Claude 12399, Jev 13245)
+
+path        runs  avg Claude tok  avg Jev tok   avg ms
+full           4            3100         2291     8660
+jev_gate       4               0         1020      550
+```
+
+**Honest reading (for the README):**
+- The calling agent reads about 68% fewer tokens (58 instead of 215). The test scripts are only
+  6–25 lines, so this is a **floor**. Raw tokens grow with file size, while the returned output stays
+  about 55–65 tokens.
+- But **total model tokens spent (25.6k) are larger than the agent tokens saved** (~1.3k over
+  8 runs). On files this small, TraceRoot isn't a net token win. Its value is (a) keeping the
+  expensive agent's context small, since those tokens are spent by Haiku and Jev instead, and
+  (b) the root-cause reasoning: in 4/8 cases the fix was in a different function from the crash.
+- The Jev gate path costs about 1k tokens and 0.55 s, versus about 5.4k tokens and 8.7 s for the full
+  path. The gate answering 50% of errors roughly halves the average cost.

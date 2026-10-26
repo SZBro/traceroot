@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import config, pipeline, store, trace_parser
+from . import pipeline, stats, store, trace_parser
 
 NO_MORE = "no more candidates; try `traceroot analyze` with `--file`"
 
@@ -34,7 +34,12 @@ def cmd_analyze(args) -> int:
         print("traceroot: the command failed but printed nothing to stderr")
         return 1
     result = pipeline.analyze(text, extra_file=args.file)
-    return _show(result["causes"][0], 0, len(result["causes"]), args.json)
+    shown = _show(result["causes"][0], 0, len(result["causes"]), args.json)
+    try:
+        stats.append(result, shown)
+    except OSError as e:
+        print(f"traceroot: could not write runs.csv ({e})", file=sys.stderr)
+    return 0
 
 
 def cmd_next(args) -> int:
@@ -46,15 +51,18 @@ def cmd_next(args) -> int:
         print(NO_MORE)
         return 0
     cause, idx, total = step
-    return _show(cause, idx, total, args.json)
-
-
-def _show(cause: dict, idx: int, total: int, as_json: bool) -> int:
-    if as_json:
-        print(json.dumps({"index": idx + 1, "total": total, **cause}, indent=2))
-    else:
-        print(pipeline.format_cause(cause, idx, total))
+    _show(cause, idx, total, args.json)
     return 0
+
+
+def _show(cause: dict, idx: int, total: int, as_json: bool) -> str:
+    """Print one cause and return exactly what was printed (used for returned_tokens)."""
+    if as_json:
+        text = json.dumps({"index": idx + 1, "total": total, **cause}, indent=2)
+    else:
+        text = pipeline.format_cause(cause, idx, total)
+    print(text)
+    return text
 
 
 def cmd_view(args) -> int:
@@ -63,7 +71,9 @@ def cmd_view(args) -> int:
 
 
 def cmd_stats(args) -> int:
-    print("traceroot: `stats` arrives in build step 5")
+    print(stats.format_summary(stats.summarize(stats.load_rows())))
+    if stats.csv_path().exists():
+        print(f"\nper-run rows: {stats.csv_path()}")
     return 0
 
 
